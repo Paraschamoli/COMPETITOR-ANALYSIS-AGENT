@@ -6,26 +6,40 @@ Enhanced with data verification and single source of truth
 
 from agno.agent import Agent
 from ..models import agent_model
-from ..tools import all_tools
+from ..tools import all_tools, google_maps_scraper_tool
+from ..config import GOOGLE_MAPS_SCRAPER_AVAILABLE
 
 
 def competitor_discovery_agent() -> Agent:
     """Create and return the Competitor Discovery Specialist agent"""
+    tools = all_tools()
+    
+    # Add Google Maps scraper if available
+    if GOOGLE_MAPS_SCRAPER_AVAILABLE:
+        tools.append(google_maps_scraper_tool())
+    
     return Agent(
         name="Local Business Competitor Discovery Specialist",
-        role="Build comprehensive competitive landscape for local businesses with verified data.",
+        role="Build comprehensive competitive landscape for local businesses with verified data using Google Maps Scraper when available.",
         model=agent_model(),
-        tools=all_tools(),
+        tools=tools,
         instructions=[
             "CRITICAL: You MUST perform actual web searches using the search tools. DO NOT make up or hallucinate any business information.",
             "Verify all data with real sources before including in your report.",
             "",
+            "GOOGLE MAPS SCRAPER INSTRUCTIONS:",
+            "- **PRIMARY TOOL:** Use the 'scrape' tool first to get comprehensive Google Maps data for '{domain} in {location}'",
+            "- The scraper provides: exact review counts, ratings, coordinates, business status, and 33+ data points",
+            "- Use scraper data as the single source of truth for review counts and ratings",
+            "- If scraper fails or returns error, fall back to search tools",
+            "- The scraper returns JSON with business data - extract and format into your table",
+            "",
             "DATA VERIFICATION RULES:",
-            "- **Single Source of Truth for Review Counts:** Always use Google Maps as the primary source for review counts. If Google Maps data is unavailable, use the most recent verified source and explicitly state the source.",
+            "- **Single Source of Truth for Review Counts:** Always use Google Maps Scraper data as the primary source for review counts. If scraper unavailable, use search results.",
             "- **Cross-Checking:** For each competitor, verify key data points (address, rating, review count) from at least 2 sources before including.",
-            "- **Conflict Resolution:** If sources disagree on review counts, use the Google Maps count and note any discrepancies in a 'Data Notes' column.",
-            "- **No Conflicting Numbers:** Never report different review counts for the same business. Use Google Maps as the single source of truth.",
-            "- **Verification:** Mark each data point as Verified, Estimated, or Unavailable.",
+            "- **Conflict Resolution:** If sources disagree on review counts, use the Google Maps Scraper count and note any discrepancies in a 'Data Notes' column.",
+            "- **No Conflicting Numbers:** Never report different review counts for the same business. Use Google Maps Scraper as the single source of truth.",
+            "- **Verification:** Mark each data point as Verified (from scraper), Verified (from search), Estimated, or Unavailable.",
             "- **No Invented Data:** If information cannot be found after 3 different search attempts, output 'Unable to verify' or 'Not publicly available' - never guess.",
             "",
             "ANTI-REPETITION RULES:",
@@ -73,16 +87,17 @@ def competitor_discovery_agent() -> Agent:
             "- Identify direct competitors in the same {domain} category",
             "",
             "MANDATORY SEARCH PROCESS:",
-            "1. Search '{company} {location} address' → Get exact address",
-            "2. Search '{company} {location} competitors' → Find real competitors",
-            "3. Search 'best {domain} in {location}' → Discover top options",
-            "4. Search '{domain} near {location}' → Find nearby alternatives",
-            "5. For each competitor found, search their exact address and verify it exists",
+            "1. **FIRST:** Use the 'scrape' tool with query='{domain}' and location='{location}' to get Google Maps data",
+            "2. Search '{company} {location} address' → Get exact address (if not in scraper data)",
+            "3. Search '{company} {location} competitors' → Find real competitors (if not in scraper data)",
+            "4. Search 'best {domain} in {location}' → Discover top options (if not in scraper data)",
+            "5. Search '{domain} near {location}' → Find nearby alternatives (if not in scraper data)",
+            "6. For each competitor found, search their exact address and verify it exists",
             "",
             "DATA VERIFICATION RULES:",
-            "- **Verify all data points** through actual web searches",
-            "- **Cross-check ratings** across Google Maps, Yelp, TripAdvisor",
-            "- **Single source of truth:** Use Google Maps as primary source for ratings and review counts",
+            "- **Verify all data points** through Google Maps Scraper or actual web searches",
+            "- **Cross-check ratings** across Google Maps (scraper), Yelp, TripAdvisor",
+            "- **Single source of truth:** Use Google Maps Scraper as primary source for ratings and review counts",
             "- If conflicting data exists, use the most recent and most reliable source",
             "- Document the source for each data point in the Verification column",
             "",

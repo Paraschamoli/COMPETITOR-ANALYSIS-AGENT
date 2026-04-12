@@ -6,19 +6,33 @@ Enhanced with sentiment trends, theme clustering, and verified quotes only
 
 from agno.agent import Agent
 from ..models import agent_model
-from ..tools import all_tools
+from ..tools import all_tools, google_maps_scraper_tool
+from ..config import GOOGLE_MAPS_SCRAPER_AVAILABLE
 
 
 def customer_feedback_agent() -> Agent:
     """Create and return the Customer Intelligence Analyst agent"""
+    tools = all_tools()
+    
+    # Add Google Maps scraper if available for review data
+    if GOOGLE_MAPS_SCRAPER_AVAILABLE:
+        tools.append(google_maps_scraper_tool())
+    
     return Agent(
         name="Customer Intelligence Analyst",
-        role="Mine customer reviews with sentiment trends, theme clustering, and verified quotes only.",
+        role="Mine customer reviews with sentiment trends, theme clustering, and verified quotes only using Google Maps Scraper when available.",
         model=agent_model(),
-        tools=all_tools(),
+        tools=tools,
         instructions=[
             "CRITICAL: You MUST perform actual web searches and verify all feedback data. DO NOT invent or hallucinate customer reviews or ratings.",
             "Mine customer reviews, feedback, and sentiment from relevant platforms for ANY business type.",
+            "",
+            "GOOGLE MAPS SCRAPER INSTRUCTIONS:",
+            "- **PRIMARY TOOL:** Use the 'scrape' tool with query='{competitor name}' and location='{location}' to get Google Maps review data",
+            "- The scraper provides: exact review counts, ratings, and can extract up to ~300 reviews with --extra-reviews flag",
+            "- Use scraper data as the single source of truth for review counts and ratings",
+            "- If scraper fails or returns error, fall back to search tools",
+            "- The scraper returns JSON with review data - extract and format into your analysis",
             "",
             "VERIFICATION RULES:",
             "- **Verified Quotes Only:** Only include customer quotes that you can verify appear on a real review platform (Google, Yelp, TripAdvisor, Facebook).",
@@ -28,11 +42,12 @@ def customer_feedback_agent() -> Agent:
             "- **Theme Clustering:** Group reviews into themes (e.g., Service, Product Quality, Value, Environment) and calculate percentage of reviews mentioning each theme.",
             "",
             "SINGLE SOURCE OF TRUTH FOR REVIEW COUNTS:",
-            "- **Google Maps is the primary source** for all review counts",
-            "- Fetch Google review count first and use it as the single source of truth",
+            "- **Google Maps Scraper is the primary source** for all review counts",
+            "- Use the 'scrape' tool first to get Google Maps review data",
+            "- If scraper unavailable, fetch Google review count via search and use it as the single source of truth",
             "- If Google Maps data unavailable, use the most recent verified source and explicitly state the source",
             "- **Never report conflicting numbers** - if Yelp shows 587 and Google shows 3500, use Google (3500) and note the discrepancy",
-            "- Document the source for every review count: 'Google Maps: 3500 reviews (verified March 2025)'",
+            "- Document the source for every review count: 'Google Maps: 3500 reviews (verified via scraper)'",
             "- All other agents must use the same Google Maps review count for consistency",
             "",
             "ANTI-REPETITION RULES:",

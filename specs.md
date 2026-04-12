@@ -65,6 +65,10 @@ crawl4ai>=0.3.0                  # Open-source scraping with JavaScript renderin
 
 # Enhanced Platform Access
 agent-reach>=1.4.0                # Multi-platform data access (Twitter, Reddit, GitHub)
+
+# Google Maps Scraper (Optional - requires Docker)
+# Docker must be installed and running to use Google Maps Scraper
+# Provides: 33+ data points including exact review counts, ratings, coordinates
 ```
 
 #### **System Utilities**
@@ -322,6 +326,14 @@ agent/
     - `agent_reach_search()` - Platform-specific search with 30s timeout
     - Subprocess execution with UTF-8 encoding and error handling
     - Windows-compatible `where` command for path detection
+  - **Google Maps Scraper Integration** (Optional):
+    - Docker-based Google Maps scraping via gosom/google-maps-scraper
+    - Provides 33+ data points including exact review counts, ratings, coordinates
+    - `check_docker()` - Availability detection via subprocess
+    - `scrape_google_maps()` - Main scraping function with JSON output
+    - `google_maps_scraper_tool()` - agno-compatible tool wrapper
+    - 5-minute timeout for Docker operations
+    - Graceful fallback to search tools when unavailable
   - **Logging**: INFO level logging configuration
   - **Environment**: dotenv loading for API keys
 - **Error Handling**: Try-except blocks for optional dependencies with informative warnings
@@ -368,6 +380,8 @@ agent/
   - `crawl_tools()` - Returns FirecrawlTools for web scraping
   - `all_tools()` - Combines search and crawl tools for full capability
   - `crawl4ai_scrape(url)` - Async Crawl4AI scraping with 5000 char limit
+  - `scrape_google_maps(query, location, depth, extract_emails, extra_reviews)` - Docker-based Google Maps scraping
+  - `google_maps_scraper_tool()` - agno-compatible tool wrapper for Google Maps scraper
 - **Features**:
   - Browser-based scraping with JavaScript support
   - Anti-bot evasion capabilities via Crawl4AI
@@ -394,30 +408,33 @@ agent/
 - **Name**: Local Business Competitor Discovery Specialist
 - **Role**: Build comprehensive competitive landscape for local businesses
 - **Model**: agent_model() (gpt-4.1-mini)
-- **Tools**: all_tools() (search + crawl)
+- **Tools**: all_tools() (search + crawl) + google_maps_scraper_tool() (when Docker available)
 - **Business Types Supported**: ANY business type via {domain} parameter
 - **Key Features**:
   - Generic discovery that adapts to {domain} parameter
   - Anti-repetition rules to avoid duplicate data
   - Completion rules for thorough competitor profiles
-  - Mandatory 5-step search process
+  - Mandatory 5-step search process (with Google Maps Scraper as primary tool)
   - Data verification with cross-checking
   - Universal search strategies (not business-type-specific)
   - Comprehensive competitor data table
-  - Single source of truth for review counts (Google Maps)
+  - Single source of truth for review counts (Google Maps Scraper when available)
+  - Graceful fallback to search tools when scraper unavailable
 - **Data Fields Collected**:
   - Business Name, Address, Phone, Website
   - Founded, Size, Rating, Review Count
   - Hours, Price Range, Specialties, Target Audience
   - Social Media, Delivery/Service Options
+  - Coordinates, CID, Business Status (from scraper when available)
 - **Competitor Filtering Rules**:
   - Exclude internal vendors/sub-businesses
   - Exclude unrelated businesses not in {domain}
   - Direct competitors only in same {domain} category
   - Include major competitors in {domain}
 - **Verification Rules**: Only include businesses with verified addresses, cross-check on Google Maps, include actual ratings, no invented data
+- **Google Maps Scraper Integration**: Uses Docker-based scraper for 33+ data points when available
 - **Generic Support**: Uses {domain} and {company} placeholders throughout, no hardcoded business names
-- **Design Rationale**: Generic discovery works for any business type with verified data
+- **Design Rationale**: Generic discovery works for any business type with verified data, scraper provides more accurate Google Maps data
 
 #### `agent/agents/product_analysis_agent.py`
 - **Name**: Local Business Product & Service Analyst
@@ -548,11 +565,11 @@ agent/
   - Local Impact Assessment
 - **Design Rationale**: Focused on recent local developments with business-type-specific tracking
 
-#### `agent/agents/customer_feedback_agent.py`
+#### `agent/agents/customer_feedback_agent.py` (185 lines)
 - **Name**: Customer Intelligence Analyst
 - **Role**: Mine customer reviews, complaints, feature requests from public sources
 - **Model**: agent_model() (gpt-4.1-mini)
-- **Tools**: all_tools() (search + crawl)
+- **Tools**: all_tools() (search + crawl) + google_maps_scraper_tool() (when Docker available)
 - **Business Types Supported**: ANY business type via {domain} parameter
 - **Universal Business Feedback Sources**:
   - Products: product reviews, e-commerce ratings, customer testimonials
@@ -564,7 +581,7 @@ agent/
   - Real Estate: property reviews, tenant feedback, client testimonials
   - Healthcare: patient reviews, medical ratings, wellness feedback
 - **Primary Local Review Sources**:
-  1. Google Reviews
+  1. Google Reviews (primary via Google Maps Scraper when available)
   2. Yelp
   3. TripAdvisor
   4. Facebook Reviews
@@ -573,8 +590,9 @@ agent/
   7. Local blogs
   8. Reddit (local subreddits)
 - **Single Source of Truth for Review Counts**:
-  - Google Maps is the primary source for all review counts
-  - Fetch Google review count first and use it as the single source of truth
+  - Google Maps Scraper is the primary source for all review counts when available
+  - Use the 'scrape' tool first to get Google Maps review data
+  - If scraper unavailable, fetch Google review count via search and use it as the single source of truth
   - If Google Maps data unavailable, use the most recent verified source
   - Never report conflicting numbers - use Google Maps count and note discrepancies
   - Document the source for every review count
@@ -592,8 +610,9 @@ agent/
   - Critical Vulnerabilities
   - Strategic Opportunities for target company
   - Data Sources & Verification
+- **Google Maps Scraper Integration**: Uses Docker-based scraper for exact review counts and ratings when available
 - **Generic Support**: Uses {domain} and {company} placeholders throughout, themes are business-agnostic
-- **Design Rationale**: Comprehensive feedback analysis with verified quotes and generic themes work for any business type
+- **Design Rationale**: Comprehensive feedback analysis with verified quotes and generic themes work for any business type, scraper provides more accurate review data
 
 #### `agent/agents/swot_synthesis_agent.py` 
 - **Name**: Strategic SWOT Analyst
@@ -678,14 +697,19 @@ agent/
   - `--output` (optional): Custom output file path
 - **Key Functions**:
   - `parse_args()`: Argument parsing with validation
-  - `banner(args)`: System status display with optional integration detection
+  - `banner(args)`: System status display with optional integration detection (including Google Maps Scraper)
   - `run_step(step_name, agent, prompt)`: Step execution with error handling
   - `main()`: Main orchestration logic
 - **Shared Data Dictionary**:
   - `shared_data['competitor_count']`: Extracted from discovery table after Step 1
-  - `shared_data['google_reviews']`: Extracted from feedback output after Step 7 using regex
+  - `shared_data['google_reviews']`: Extracted from feedback output after Step 7 using regex and JSON parsing (Google Maps Scraper data prioritized)
   - Passed to SWOT agent via context for competitor count
   - Passed to report generator for review count consistency
+- **Google Maps Scraper Integration**:
+  - Checks Docker availability on startup
+  - Displays status in banner
+  - Extracts review counts from scraper JSON output when available
+  - Falls back to regex extraction from text when scraper unavailable
 - **Pipeline Steps**:
   1. **Local Competitor Discovery**: Auto-discover 6-10 competitors, extract competitor_count
   2. **Product & Service Analysis**: Deep-dive into offerings
@@ -736,8 +760,9 @@ The Competitor Analysis Agent system is built on a **modular, sequential archite
 - **AI Framework**: agno (multi-agent orchestration)
 - **Models**: OpenRouter (GPT-4.1, GPT-4.1-mini)
 - **Search**: Tavily, Serper (dual redundancy)
-- **Scraping**: Firecrawl (primary), Crawl4AI (optional fallback)
+- **Scraping**: Firecrawl (primary), Crawl4AI (optional fallback), Google Maps Scraper (Docker-based, optional)
 - **Platform Access**: Agent Reach (optional CLI integration)
+- **Docker**: Required for Google Maps Scraper integration (optional)
 
 ### Performance Characteristics
 

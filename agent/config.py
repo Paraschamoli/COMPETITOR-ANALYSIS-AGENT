@@ -35,14 +35,14 @@ try:
             # First check if agent-reach command exists
             result = subprocess.run(['where', 'agent-reach'], 
                                   capture_output=True, text=True, 
-                                  timeout=5, encoding='utf-8', errors='ignore')
+                                  timeout=5, encoding='utf-8', errors='replace')
             if result.returncode != 0:
                 return False
             
             # If command exists, try a quick version check instead of doctor
             result = subprocess.run(['agent-reach', '--version'], 
                                   capture_output=True, text=True, 
-                                  timeout=5, encoding='utf-8', errors='ignore')
+                                  timeout=5, encoding='utf-8', errors='replace')
             return result.returncode == 0
         except (FileNotFoundError, subprocess.TimeoutExpired):
             return False
@@ -56,19 +56,19 @@ try:
             if platform.lower() == 'twitter':
                 result = subprocess.run(['twitter', 'search', query, '-n', '10'], 
                                   capture_output=True, text=True, timeout=30,
-                                  encoding='utf-8', errors='ignore')
+                                  encoding='utf-8', errors='replace')
             elif platform.lower() == 'reddit':
                 result = subprocess.run(['rdt', 'search', query], 
                                   capture_output=True, text=True, timeout=30,
-                                  encoding='utf-8', errors='ignore')
+                                  encoding='utf-8', errors='replace')
             elif platform.lower() == 'youtube':
                 result = subprocess.run(['yt-dlp', '--dump-json', f'ytsearch10:{query}'], 
                                   capture_output=True, text=True, timeout=30,
-                                  encoding='utf-8', errors='ignore')
+                                  encoding='utf-8', errors='replace')
             elif platform.lower() == 'github':
                 result = subprocess.run(['gh', 'search', 'repos', query, '--limit', '10'], 
                                   capture_output=True, text=True, timeout=30,
-                                  encoding='utf-8', errors='ignore')
+                                  encoding='utf-8', errors='replace')
             else:
                 return f"Unsupported platform: {platform}"
             
@@ -99,6 +99,33 @@ try:
 except ImportError:
     YOUTUBE_AVAILABLE = False
     print("⚠️  google-api-python-client not installed. YouTube analysis will use search fallback.")
+
+# Optional: Google Maps Scraper (via Docker)
+# Set ENABLE_GOOGLE_MAPS_SCRAPER=true in .env to enable
+GOOGLE_MAPS_SCRAPER_AVAILABLE = os.getenv("ENABLE_GOOGLE_MAPS_SCRAPER", "false").lower() == "true"
+
+if GOOGLE_MAPS_SCRAPER_AVAILABLE:
+    try:
+        def check_docker():
+            """Check if Docker is available and running"""
+            try:
+                result = subprocess.run(['docker', '--version'], 
+                                      capture_output=True, text=True, 
+                                      timeout=5, encoding='utf-8', errors='replace')
+                return result.returncode == 0
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                return False
+        
+        if check_docker():
+            print("✅ Google Maps Scraper integration enabled (Docker available)")
+        else:
+            print("❌ Google Maps Scraper requested but Docker not available. Disabling.")
+            GOOGLE_MAPS_SCRAPER_AVAILABLE = False
+    except Exception:
+        print("❌ Docker check failed. Google Maps Scraper disabled.")
+        GOOGLE_MAPS_SCRAPER_AVAILABLE = False
+else:
+    print("⚠️  Google Maps Scraper disabled. Set ENABLE_GOOGLE_MAPS_SCRAPER=true in .env to enable.")
 
 # Advanced Features Configuration
 # Toggle advanced report sections (Methodology, Personas, Risk, etc.)

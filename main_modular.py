@@ -10,7 +10,7 @@ Usage:
 import argparse
 from agent.config import (
     COORDINATOR_MODEL, AGENT_MODEL, CRAWL4AI_AVAILABLE,
-    AGENT_REACH_AVAILABLE, YOUTUBE_AVAILABLE, ENABLE_ADVANCED_SECTIONS
+    AGENT_REACH_AVAILABLE, YOUTUBE_AVAILABLE, ENABLE_ADVANCED_SECTIONS, GOOGLE_MAPS_SCRAPER_AVAILABLE
 )
 from agent.agents.competitor_discovery_agent import competitor_discovery_agent
 from agent.agents.product_analysis_agent import product_analysis_agent
@@ -49,6 +49,7 @@ def banner(args):
     print(f"  Models         : {COORDINATOR_MODEL} / {AGENT_MODEL}")
     print(f"  Crawl4AI       : {'✅ Available' if CRAWL4AI_AVAILABLE else '❌ Not installed'}")
     print(f"  Agent Reach    : {'✅ Available' if AGENT_REACH_AVAILABLE else '❌ Not installed'}")
+    print(f"  Google Maps Scraper : {'✅ Available' if GOOGLE_MAPS_SCRAPER_AVAILABLE else '❌ Not available (Docker required)'}")
     print(f"  YouTube API    : {'✅ Configured' if YOUTUBE_AVAILABLE else '❌ Not configured (add YOUTUBE_API_KEY to .env)'}")
     print(f"  Advanced Sects : {'✅ Enabled' if ENABLE_ADVANCED_SECTIONS else '❌ Disabled (set ENABLE_ADVANCED_SECTIONS=true)'}")
     print("═" * w)
@@ -183,11 +184,30 @@ def main():
     
     # Extract Google review counts from feedback output
     import re
+    import json
     feedback_text = step_results['feedback']
+    
+    # First, try to extract from Google Maps Scraper JSON output
+    if GOOGLE_MAPS_SCRAPER_AVAILABLE:
+        # Look for JSON blocks in the output
+        json_pattern = r'\{[^{}]*"review_count"[^{}]*\}'
+        for match in re.finditer(json_pattern, feedback_text):
+            try:
+                data = json.loads(match.group())
+                if 'title' in data and 'review_count' in data:
+                    competitor_name = data['title']
+                    review_count = data['review_count']
+                    shared_data['google_reviews'][competitor_name] = review_count
+            except json.JSONDecodeError:
+                continue
+    
+    # Fallback: extract from text using regex
     for match in re.finditer(r'([A-Za-z\s]+?)[\s:]+(\d+)\s+reviews', feedback_text, re.IGNORECASE):
         competitor_name = match.group(1).strip()
         review_count = int(match.group(2))
-        shared_data['google_reviews'][competitor_name] = review_count
+        # Only add if not already extracted from scraper
+        if competitor_name not in shared_data['google_reviews']:
+            shared_data['google_reviews'][competitor_name] = review_count
     print(f"  📊 Extracted Google review counts for {len(shared_data['google_reviews'])} competitors")
 
     # ── SWOT Synthesis ────────────────────────────────────────────────────────
