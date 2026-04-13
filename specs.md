@@ -66,9 +66,11 @@ crawl4ai>=0.3.0                  # Open-source scraping with JavaScript renderin
 # Enhanced Platform Access
 agent-reach>=1.4.0                # Multi-platform data access (Twitter, Reddit, GitHub)
 
-# Google Maps Scraper (Optional - requires Docker)
+# Google Maps Scraper (Optional - requires Docker + opt-in):
+# Set ENABLE_GOOGLE_MAPS_SCRAPER=true in .env to enable
 # Docker must be installed and running to use Google Maps Scraper
 # Provides: 33+ data points including exact review counts, ratings, coordinates
+# 30-second timeout to prevent hanging
 ```
 
 #### **System Utilities**
@@ -215,6 +217,17 @@ The system performs comprehensive validation:
 - **Output**: Categorized competitor list with comprehensive profiles
 - **Business Types Supported**: ANY business type via {domain} parameter
 - **Data Extraction**: Competitor count extracted from discovery table and stored in `shared_data['competitor_count']`
+- **Competitor Filtering Rules**:
+  - Exclude internal vendors/sub-businesses operating inside target
+  - Exclude unrelated businesses not in {domain} category
+  - Exclude wrong-city venues (verify address is in correct city)
+  - Direct competitors only in same {domain} category
+  - Exclude competitors with <50 reviews (insufficient data)
+  - Flag competitors with <100 reviews as "Limited sample size"
+- **Output Requirements**:
+  - Complete Competitive Landscape section with all discovered competitors
+  - Side-by-side comparison matrix (Name, Price Range, Rating, Size, Location, Hours, Review Count)
+  - Numerical consistency: same rating/review count across all sections
 
 #### Step 2: Product & Service Analysis
 - **Agent**: `product_analysis_agent()`
@@ -222,30 +235,37 @@ The system performs comprehensive validation:
 - **Methodology**: Universal search process adapted to business type
 - **Output**: Detailed product comparison with location, operations, facilities, and customer experience
 - **Generic Support**: Uses {domain} parameter to adapt analysis to any business type
+- **Coverage Requirement**: MUST analyze EVERY competitor discovered in research, not just target company
+- **Accessibility Verification**: NEVER assume accessibility features without explicit verification from official sources. Mark unverified as "Needs confirmation"
 
 #### Step 3: Pricing & Business Model Analysis
 - **Agent**: `pricing_business_agent()`
 - **Purpose**: Extract pricing information, business model, and competitive positioning
 - **Methodology**: Research process adapted per business type
 - **Output**: Pricing tables, strategy analysis, and business model metrics
+- **Coverage Requirement**: MUST analyze EVERY competitor discovered in research, not just target company
+- **Delivery Platform Analysis**: MUST analyze delivery platform presence (Uber Eats, Deliveroo, Thuisbezorgd, Just Eat, Wolt) with availability, fees, minimum order, rating
 
 #### Step 4: Local SEO & Content Strategy
 - **Agent**: `seo_content_agent()`
 - **Purpose**: Analyze local search presence, Google Maps optimization, and local content marketing
 - **Methodology**: 6-step local SEO analysis
 - **Output**: SEO metrics table, strengths/weaknesses, content strategy recommendations
+- **Coverage Requirement**: MUST analyze EVERY competitor discovered in research, not just target company
 
 #### Step 5: Social Media Intelligence
 - **Agent**: `social_media_agent()`
 - **Purpose**: Extract social media presence and content strategy
 - **Methodology**: Platform-specific analysis with Agent Reach integration when available
 - **Output**: Platform follower counts, engagement metrics, community engagement analysis
+- **Coverage Requirement**: MUST analyze EVERY competitor discovered in research, not just target company
 
 #### Step 6: Local News & Market Intelligence
 - **Agent**: `news_intelligence_agent()`
 - **Purpose**: Track recent strategic moves, funding, product launches, market signals
 - **Methodology**: 6 specific query patterns per competitor, local news sources
 - **Output**: Recent developments, events, awards, partnerships, business updates
+- **Coverage Requirement**: MUST analyze EVERY competitor discovered in research, not just target company
 
 #### Step 7: Customer Feedback Analysis
 - **Agent**: `customer_feedback_agent()`
@@ -253,6 +273,8 @@ The system performs comprehensive validation:
 - **Methodology**: Multi-platform review aggregation, sentiment analysis, theme clustering
 - **Output**: Customer feedback summary with verified quotes and strategic opportunities
 - **Data Extraction**: Google review counts extracted and stored in `shared_data['google_reviews']`
+- **Coverage Requirement**: MUST analyze EVERY competitor discovered in research, not just target company
+- **Quote Verification**: Banned "derived from review analysis" quotes. Only actual verified quotes with platform/date allowed
 
 #### Bonus Step: SWOT Synthesis
 - **Agent**: `swot_synthesis_agent()`
@@ -260,6 +282,7 @@ The system performs comprehensive validation:
 - **Methodology**: Strengths/Weaknesses/Opportunities/Threats assessment with strategic recommendations
 - **Model**: coordinator_model() (gpt-4.1) for higher quality synthesis
 - **Context**: Receives `competitor_count` from shared_data to avoid hardcoded values
+- **Data-Driven Requirement**: CRITICAL - Use exact competitor_count from context. Never use hardcoded values like '1 key players' or '5 key players'
 - **Output**: Comprehensive SWOT analysis for all competitors and strategic recommendations
 
 #### Bonus Step: Advanced Sections (Optional)
@@ -267,6 +290,10 @@ The system performs comprehensive validation:
 - **Purpose**: Generate advanced strategic sections (personas, risk, recommendations, benchmarks, etc.)
 - **Model**: coordinator_model() (gpt-4.1)
 - **Output**: 9 additional report sections when enabled via `ENABLE_ADVANCED_SECTIONS`
+- **Data-Only Requirement**: Generate only from actual research data. If no data, mark as "Insufficient data" - no invented benchmarks
+- **Source Requirements**: Seasonal data and financial benchmarks MUST include source citations (industry reports, local tourism data, competitor public statements)
+- **Quote Verification**: Banned "derived from review analysis" quotes in customer personas. Only actual verified quotes with platform/date allowed
+- **Accessibility Verification**: NEVER assume accessibility features without explicit verification. Mark unverified as "Needs confirmation"
 
 ## Agent Package Architecture
 
@@ -326,14 +353,16 @@ agent/
     - `agent_reach_search()` - Platform-specific search with 30s timeout
     - Subprocess execution with UTF-8 encoding and error handling
     - Windows-compatible `where` command for path detection
-  - **Google Maps Scraper Integration** (Optional):
+  - **Google Maps Scraper Integration** (Optional - Opt-in via .env):
     - Docker-based Google Maps scraping via gosom/google-maps-scraper
     - Provides 33+ data points including exact review counts, ratings, coordinates
-    - `check_docker()` - Availability detection via subprocess
+    - `check_docker()` - Availability detection via subprocess with UTF-8 encoding
     - `scrape_google_maps()` - Main scraping function with JSON output
     - `google_maps_scraper_tool()` - agno-compatible tool wrapper
-    - 5-minute timeout for Docker operations
+    - 30-second timeout for Docker operations (reduced from 5 minutes to prevent hanging)
     - Graceful fallback to search tools when unavailable
+    - Opt-in via `ENABLE_GOOGLE_MAPS_SCRAPER=true` in .env file
+    - Subprocess calls use UTF-8 encoding with error replacement for Windows compatibility
   - **Logging**: INFO level logging configuration
   - **Environment**: dotenv loading for API keys
 - **Error Handling**: Try-except blocks for optional dependencies with informative warnings
@@ -427,14 +456,23 @@ agent/
   - Social Media, Delivery/Service Options
   - Coordinates, CID, Business Status (from scraper when available)
 - **Competitor Filtering Rules**:
-  - Exclude internal vendors/sub-businesses
-  - Exclude unrelated businesses not in {domain}
+  - Exclude internal vendors/sub-businesses operating inside target
+  - Exclude unrelated businesses not in {domain} category
+  - Exclude wrong-city venues (verify address is in correct city)
   - Direct competitors only in same {domain} category
   - Include major competitors in {domain}
+  - Exclude competitors with <50 reviews (insufficient data for reliable analysis)
+  - Flag competitors with <100 reviews as "Limited sample size"
 - **Verification Rules**: Only include businesses with verified addresses, cross-check on Google Maps, include actual ratings, no invented data
-- **Google Maps Scraper Integration**: Uses Docker-based scraper for 33+ data points when available
+- **Numerical Consistency**: Ensure rating and review count are consistent across all sections. If 4.4/5 (2,892 reviews) reported once, use same numbers everywhere
+- **Output Requirements**:
+  - Complete Competitive Landscape section with summary of all discovered competitors
+  - Side-by-side comparison matrix (Name, Price Range, Rating, Size, Location, Hours, Review Count)
+  - Include target company in matrix for comparison
+  - Use consistent price range formatting ($, $$, $$$)
+- **Google Maps Scraper Integration**: Uses Docker-based scraper for 33+ data points when available (opt-in via ENABLE_GOOGLE_MAPS_SCRAPER)
 - **Generic Support**: Uses {domain} and {company} placeholders throughout, no hardcoded business names
-- **Design Rationale**: Generic discovery works for any business type with verified data, scraper provides more accurate Google Maps data
+- **Design Rationale**: Generic discovery works for any business type with verified data, scraper provides more accurate Google Maps data, comparison matrix enables quick competitor comparison
 
 #### `agent/agents/product_analysis_agent.py`
 - **Name**: Local Business Product & Service Analyst
@@ -454,6 +492,8 @@ agent/
   - Actual quotes from verified reviews
   - "Unable to verify" for missing data
   - Adapt output format based on business type
+- **Coverage Requirement**: CRITICAL - MUST analyze EVERY competitor discovered in research, not just target company. Do not skip any competitors
+- **Accessibility Verification**: NEVER assume wheelchair access, parking availability, or other accessibility features without explicit verification from official sources (website, Google Business Profile, or direct contact). Mark unverified as "Needs confirmation" or "Not verified"
 - **Output Sections**:
   - Location & Operations (address, hours, capacity, parking, accessibility)
   - Products & Services (categories, key offerings, price range, specialties, inventory/service scope)
@@ -481,6 +521,8 @@ agent/
   - Entertainment (ticket prices, membership fees, packages)
   - Real Estate (rental rates, commission fees, service charges)
 - **Research Process**: 4-step process adapted per business type (Food/Bev, Retail, Service)
+- **Coverage Requirement**: CRITICAL - MUST analyze EVERY competitor discovered in research, not just target company. Do not skip any competitors
+- **Delivery Platform Analysis**: MUST analyze delivery platform presence (Uber Eats, Deliveroo, Thuisbezorgd, Just Eat, Wolt) with availability, delivery fee, minimum order, rating on platform
 - **Output Sections**:
   - Overall Price Position (Budget/Mid-range/Premium/Luxury)
   - Detailed Menu Pricing table (item categories, price ranges, examples, sources)
@@ -492,7 +534,7 @@ agent/
   - Competitive Pricing Position vs target company
   - Strategic Pricing Insights
   - Data Verification Sources
-- **Design Rationale**: Universal pricing analysis works across all business types with structured output
+- **Design Rationale**: Universal pricing analysis works across all business types with structured output, delivery platform analysis ensures comprehensive coverage
 
 #### `agent/agents/seo_content_agent.py` 
 - **Name**: Local SEO & Content Strategy Analyst
@@ -596,6 +638,8 @@ agent/
   - If Google Maps data unavailable, use the most recent verified source
   - Never report conflicting numbers - use Google Maps count and note discrepancies
   - Document the source for every review count
+- **Coverage Requirement**: CRITICAL - MUST analyze EVERY competitor discovered in research, not just target company. Do not skip any competitors
+- **Quote Verification**: Banned "derived from review analysis" quotes. NEVER use phrases like 'Derived from review analysis' or similar. Either provide actual verified quotes with platform/date, or remove the quote entirely. Each quote must be attributable to a specific review or source
 - **Generic Feedback Analysis**: Adapts analysis based on business type ({domain})
   - Common feedback themes: product/service quality, customer service, value, environment/facilities, convenience, communication
 - **Output Sections**:
@@ -620,9 +664,8 @@ agent/
 - **Model**: coordinator_model() (gpt-4.1) - higher quality model for synthesis
 - **Tools**: None (synthesis only, no external data fetching)
 - **Data-Driven Analysis Requirements**:
-  - Uses Competitor Count provided in context from shared_data
+  - CRITICAL - Use exact competitor_count provided in context from shared_data. The context will include 'Competitor Count: X' - use this exact number. Do NOT use hardcoded values like '1 key players' or '5 key players'
   - Outputs "Competitive landscape shows X key players in the {domain} market" where X is the Competitor Count
-  - Does not use hardcoded numbers like '1 key players' or '6 key players'
   - From customer feedback, states the top praise category and its percentage
   - From pricing analysis, states {company}'s price position (e.g., mid-range)
 - **Output Format**:
@@ -643,18 +686,24 @@ agent/
 - **Model**: coordinator_model() (gpt-4.1) - higher quality model for strategic analysis
 - **Tools**: None (synthesis only, no external data fetching)
 - **Output Sections** (9 sections):
-  1. Customer Personas (3-4 distinct personas based on feedback)
+  1. Customer Personas (3-4 distinct personas based on feedback - MUST use actual verified quotes with platform/date, NOT 'derived from review analysis')
   2. Risk Assessment (5 external threats with probability, impact, mitigation)
   3. Actionable Recommendations (prioritized table with owner, timeline, KPI, priority)
-  4. Financial Benchmarks (estimated financial performance and cost structure)
+  4. Financial Benchmarks (estimated financial performance and cost structure - MUST include source citations)
   5. Digital Ads & Paid Media (current presence and recommended strategy)
   6. UGC & Hashtag Analysis (top hashtags and campaign recommendations)
-  7. Accessibility & Inclusivity (physical and digital accessibility features)
-  8. Seasonal Trends (peak/off-peak seasons and strategy)
+  7. Accessibility & Inclusivity (physical and digital accessibility features - NEVER assume without verification, mark unverified as 'Needs confirmation')
+  8. Seasonal Trends (peak/off-peak seasons and strategy - MUST include source citations with seasonal traffic table)
   9. Next Steps / Action Plan (prioritized immediate, short-term, medium-term, long-term actions)
 - **Data Requirements**: All data must be based on research provided, no invented numbers
+- **Source Requirements**:
+  - Seasonal data MUST include source citations (industry reports, local tourism data, competitor public statements)
+  - Financial benchmarks MUST include source citations (industry reports, public financial data, analyst reports)
+  - Source citation format: 'Based on Amsterdam Tourism Board 2025 report' or 'Industry average from Restaurant Association 2024'
+- **Quote Verification**: Banned "derived from review analysis" quotes. MUST use actual verified quotes with platform/date in customer personas
+- **Accessibility Verification**: NEVER assume accessibility features without explicit verification. Mark unverified as 'Needs confirmation'
 - **Generic Support**: Uses {company}, {domain}, {location} placeholders throughout
-- **Design Rationale**: Provides advanced strategic insights using coordinator model for higher quality analysis
+- **Design Rationale**: Provides advanced strategic insights using coordinator model for higher quality analysis, source requirements prevent invented benchmarks
 
 #### `agent/report_generator.py` (803 lines)
 - **Purpose**: Markdown report synthesis and file management with validation
@@ -678,11 +727,13 @@ agent/
   - `save_report()`: Save report to file with timestamp and UTF-8 encoding
 - **shared_data Parameter**: Receives shared_data dictionary with competitor_count and google_reviews
 - **Review Count Override**: Uses shared_data['google_reviews'] to override inconsistent review counts across all sections
-- **Truncation Handling**: Applies clean_cutoff to all agent outputs to prevent mid-sentence truncation, logs warnings when truncation occurs
+- **Truncation Handling**: Applies clean_cutoff() to all agent outputs before synthesize_final_report() to prevent mid-sentence truncation, logs warnings when truncation occurs
+- **Executive Summary**: Data-driven using actual competitor_count, competitor names, price position, top praise category + percentage from feedback
+- **Advanced Sections Data-Only**: Uses only actual research data. If no data, marks as "Insufficient data" instead of using fallback functions with invented benchmarks
 - **Table Validation**: Automatically adds Verification column to tables lacking it, validates table structure
 - **Report Sections**: 19-section report structure when advanced sections enabled, 10-section when disabled
-- **Advanced Features**: Visual charts (sentiment bars, positioning matrix, seasonal heatmap) when enabled
-- **Design Rationale**: Template-based generation reduces API costs, validation ensures data quality, shared_data ensures consistency
+- **Advanced Features**: Visual charts (sentiment bars, positioning matrix, seasonal heatmap) when enabled. Positioning matrix generates when ENABLE_VISUAL_CHARTS is true (no data requirement)
+- **Design Rationale**: Template-based generation reduces API costs, validation ensures data quality, shared_data ensures consistency, data-only advanced sections prevent invented benchmarks
 
 ### Main Entry Point
 
@@ -735,6 +786,12 @@ The Competitor Analysis Agent system is built on a **modular, sequential archite
 - **Data Verification**: All agents must verify data from real sources before inclusion
 - **Shared Data Communication**: shared_data dictionary passes competitor_count and google_reviews between agents
 - **Single Source of Truth**: Google Maps as primary source for review counts, stored in shared_data for consistency
+- **Full Competitor Coverage**: All analysis steps (pricing, SEO, social, news, feedback) MUST analyze EVERY discovered competitor
+- **Competitor Filtering**: Exclude internal vendors, wrong-city venues, unrelated business types, low-review competitors
+- **Data-Only Advanced Sections**: Generate only from actual research data, mark "Insufficient data" if no data available
+- **Accessibility Verification**: NEVER assume accessibility features without explicit verification
+- **Quote Verification**: Banned "derived from review analysis" quotes, only actual verified quotes allowed
+- **Source Requirements**: Seasonal and financial data MUST include source citations
 - **Graceful Degradation**: System functions with core dependencies only, optional integrations enhance capabilities
 - **Error Resilience**: Each step wrapped in try-except with fallback error messages
 - **Cost Efficiency**: Template-based report generation avoids additional LLM calls
@@ -744,9 +801,11 @@ The Competitor Analysis Agent system is built on a **modular, sequential archite
 1. **Sequential Pipeline**: 7-step analysis with shared_data for cross-agent communication
 2. **Model Tiers**: Coordinator model (gpt-4.1) for synthesis, Agent model (gpt-4.1-mini) for analysis
 3. **Tool Abstraction**: Modular tool functions allow selective usage per agent
-4. **Optional Integrations**: Crawl4AI, Agent Reach enhance without breaking core functionality
-5. **Anti-Hallucination**: Strict verification rules prevent invented data
+4. **Optional Integrations**: Crawl4AI, Agent Reach, Google Maps Scraper (opt-in via .env) enhance without breaking core functionality
+5. **Anti-Hallucination**: Strict verification rules prevent invented data, source requirements for seasonal/financial data
 6. **Generic Placeholders**: {company}, {domain}, {location} placeholders work for any business type
+7. **Data Consistency**: shared_data ensures competitor_count and google_reviews consistency across sections
+8. **Truncation Prevention**: clean_cutoff() applied to all agent outputs before report generation
 
 ### File Organization Summary
 
@@ -754,6 +813,124 @@ The Competitor Analysis Agent system is built on a **modular, sequential archite
 - **Agent Modules** (10 files): 9 specialized agents + module exports
 - **Entry Point** (1 file): main_modular.py with CLI and orchestration
 - **Total**: 16 files analyzed with comprehensive documentation
+
+## Critical Fixes Applied (April 13, 2026)
+
+The following critical fixes were applied to ensure the agent system matches specs.md requirements and produces high-quality, data-driven reports:
+
+### 1. Competitor Count Data-Driven
+- **Issue**: Hardcoded competitor count values (e.g., "1 key players") in Executive Summary and SWOT
+- **Fix**: 
+  - Extract competitor_count from discovery table → store in shared_data['competitor_count']
+  - SWOT agent receives competitor_count in context, uses exact value
+  - Executive Summary uses actual competitor_count from shared_data
+- **Files**: main_modular.py, swot_synthesis_agent.py, report_generator.py
+
+### 2. Full Competitor Coverage
+- **Issue**: Analysis steps only analyzing target company, not all discovered competitors
+- **Fix**: Added "CRITICAL: You MUST analyze EVERY competitor discovered in research" to all analysis agents
+- **Files**: product_analysis_agent.py, pricing_business_agent.py, seo_content_agent.py, social_media_agent.py, news_intelligence_agent.py, customer_feedback_agent.py
+
+### 3. Competitor Filtering
+- **Issue**: Including irrelevant competitors (internal vendors, wrong-city venues, low-review competitors)
+- **Fix**: 
+  - Exclude internal vendors/sub-businesses operating inside target
+  - Exclude wrong-city venues (verify address is in correct city)
+  - Exclude competitors with <50 reviews (insufficient data)
+  - Flag competitors with <100 reviews as "Limited sample size"
+- **Files**: competitor_discovery_agent.py
+
+### 4. Truncation Prevention
+- **Issue**: Agent outputs truncated mid-sentence in reports
+- **Fix**: Apply clean_cutoff() to all agent outputs before synthesize_final_report()
+- **Status**: Already implemented in report_generator.py
+
+### 5. Review Consistency
+- **Issue**: Numerical contradictions (4.3 vs 4.4 rating, 587 vs 2,300+ reviews) across sections
+- **Fix**: 
+  - Use single source of truth (Google Maps via search if scraper unavailable)
+  - Store in shared_data['google_reviews']
+  - Override all review counts in report using shared_data
+  - Enforce numerical consistency: same rating/review count everywhere
+- **Status**: Already implemented in main_modular.py and report_generator.py
+
+### 6. Data-Driven Executive Summary
+- **Issue**: Generic/hardcoded Executive Summary without actual data
+- **Fix**: 
+  - Extract actual competitor_count from shared_data
+  - Extract actual competitor names from discovery
+  - Extract top praise category + percentage from feedback
+  - Extract price position from pricing data
+- **Files**: report_generator.py
+
+### 7. Advanced Sections Data-Only
+- **Issue**: Fallback functions with invented benchmarks (financial_benchmarks, risk_assessment, etc.)
+- **Fix**: 
+  - Removed all fallback functions with invented data
+  - Use only actual research data
+  - If no data available, mark as "Insufficient data"
+- **Files**: report_generator.py
+
+### 8. ASCII Matrix Fix
+- **Issue**: Positioning matrix disabled when no competitor data
+- **Fix**: Removed "or not competitors" check, matrix now generates when ENABLE_VISUAL_CHARTS is true
+- **Files**: report_generator.py
+
+### 9. Google Maps Scraper Opt-In & Timeout
+- **Issue**: Scraper caused 15+ minute hangs with 5-minute timeout
+- **Fix**: 
+  - Made scraper opt-in via ENABLE_GOOGLE_MAPS_SCRAPER=true in .env
+  - Reduced timeout from 5 minutes to 30 seconds
+  - Added UTF-8 encoding with error replacement for Windows compatibility
+- **Files**: config.py, tools.py
+
+### 10. Accessibility Verification
+- **Issue**: Assuming accessibility features without verification
+- **Fix**: NEVER assume wheelchair access, parking, etc. without explicit verification. Mark unverified as "Needs confirmation"
+- **Files**: product_analysis_agent.py, advanced_sections_agent.py
+
+### 11. Delivery Platform Analysis
+- **Issue**: No analysis of delivery platforms (Uber Eats, Deliveroo, Thuisbezorgd)
+- **Fix**: MUST analyze delivery platform presence with availability, fees, minimum order, rating
+- **Files**: pricing_business_agent.py
+
+### 12. Quote Verification
+- **Issue**: "Derived from review analysis" quotes instead of actual verified quotes
+- **Fix**: Banned "derived from review analysis" quotes. Only actual verified quotes with platform/date allowed
+- **Files**: customer_feedback_agent.py, advanced_sections_agent.py
+
+### 13. Source Requirements
+- **Issue**: Seasonal traffic patterns and financial benchmarks without source citations
+- **Fix**: MUST include source citations (industry reports, local tourism data, competitor public statements)
+- **Files**: advanced_sections_agent.py
+
+### 14. Comparison Matrix
+- **Issue**: No side-by-side competitor comparison
+- **Fix**: MUST include comparison matrix (Name, Price Range, Rating, Size, Location, Hours, Review Count)
+- **Files**: competitor_discovery_agent.py
+
+### 15. Competitive Landscape Completion
+- **Issue**: Empty Competitive Landscape section
+- **Fix**: MUST complete with summary of all discovered competitors
+- **Files**: competitor_discovery_agent.py
+
+## Validation Checklist
+
+After applying these fixes, the system now:
+- ✅ Uses actual competitor_count from shared_data (no hardcoded values)
+- ✅ Analyzes EVERY discovered competitor in all steps
+- ✅ Filters out irrelevant competitors (internal vendors, wrong-city, low-review)
+- ✅ Applies clean_cutoff to prevent mid-sentence truncation
+- ✅ Uses single source of truth for review counts (shared_data)
+- ✅ Generates data-driven Executive Summary with actual metrics
+- ✅ Uses only actual research data in advanced sections (no invented benchmarks)
+- ✅ Generates positioning matrix when ENABLE_VISUAL_CHARTS is true
+- ✅ Verifies accessibility claims before including
+- ✅ Analyzes delivery platform presence
+- ✅ Uses only verified quotes (no "derived from analysis")
+- ✅ Includes source citations for seasonal/financial data
+- ✅ Provides side-by-side comparison matrix
+- ✅ Completes Competitive Landscape section with all competitors
 
 ### Technology Stack
 
@@ -1314,4 +1491,4 @@ The Competitor Analysis Agent represents a **production-grade, enterprise-ready 
 
 ---
 
-*This comprehensive specification document covers the complete technical architecture, implementation details, operational guidelines, and future roadmap for the Competitor Analysis Agent system. Last updated: April 10, 2026*
+*This comprehensive specification document covers the complete technical architecture, implementation details, operational guidelines, and future roadmap for the Competitor Analysis Agent system. Last updated: April 13, 2026*

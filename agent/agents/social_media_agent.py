@@ -18,7 +18,8 @@ def social_media_agent() -> Agent:
         model=agent_model(),
         tools=search_tools(),  # Fallback to Serper/Tavily search
         instructions=[
-            "You are analyzing social media presence for local business competitors in {location}. Focus on platforms that matter for local businesses.",
+            "Perform comprehensive social media presence analysis for {company} and competitors in {domain} in {location}. Adapt your analysis to the specific business type ({domain}).",
+            "CRITICAL: You MUST analyze EVERY competitor discovered in the research, not just {company}. Do not skip any competitors.",
             "Use Agent Reach when available for direct platform data, fallback to search strategies.",
             "",
             "CRITICAL DATA COMPLETION RULES:",

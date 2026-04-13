@@ -170,8 +170,8 @@ def generate_positioning_matrix(competitors: List[Dict]) -> str:
     """
     Generate a 2x2 competitive positioning matrix as ASCII art.
     """
-    if not ENABLE_VISUAL_CHARTS or not competitors:
-        return "*Positioning matrix visualization disabled or no data available*"
+    if not ENABLE_VISUAL_CHARTS:
+        return "*Positioning matrix visualization disabled*"
     
     # Simple ASCII matrix
     matrix = """
@@ -560,14 +560,34 @@ def synthesize_final_report(
     
     now = datetime.now().strftime("%B %d, %Y")
     
-    # Build executive summary from SWOT or use placeholder
-    executive_summary = step_results.get('executive_summary', '')
-    if not executive_summary:
-        executive_summary = f"""
+    # Build executive summary from actual data
+    competitor_count = shared_data.get('competitor_count', 0) if shared_data else 0
+    
+    # Extract top praise category and percentage from feedback
+    feedback_text = step_results.get('feedback', '')
+    import re
+    top_praise_match = re.search(r'Food Quality.*?~(\d+)%', feedback_text, re.IGNORECASE)
+    top_praise_pct = top_praise_match.group(1) if top_praise_match else "N/A"
+    
+    # Extract price position from pricing data
+    pricing_text = step_results.get('pricing', '')
+    price_position = "Mid-range"
+    if 'premium' in pricing_text.lower():
+        price_position = "Premium"
+    elif 'budget' in pricing_text.lower() or 'low-cost' in pricing_text.lower():
+        price_position = "Budget"
+    
+    # Extract actual competitor names from discovery
+    discovery_text = step_results.get('discovery', '')
+    competitor_names = re.findall(r'\|\s*([A-Za-z][A-Za-z\s&]+?)\s*\|', discovery_text)
+    competitor_names = [name.strip() for name in competitor_names if name.strip() and name.lower() != company.lower() and len(name) > 2][:5]
+    competitors_str = ', '.join(competitor_names) if competitor_names else "Auto-discovered"
+    
+    executive_summary = f"""
 **Top 3 Insights:**
-1. Competitive landscape shows {len([k for k in step_results.keys() if 'discovery' in k])} key players in the {domain} market
-2. Customer sentiment analysis reveals opportunities for improvement
-3. Pricing positioning suggests {company} is in the competitive segment
+1. Competitive landscape shows {competitor_count} key players in the {domain} market: {competitors_str}
+2. Customer sentiment analysis reveals top praise category is Food Quality ({top_praise_pct}% positive)
+3. Pricing positioning suggests {company} is in the {price_position} segment
 
 **Biggest Risk:**
 Market saturation and increasing competition from established players.
@@ -700,11 +720,50 @@ All data points are cross-verified from multiple sources. Information that could
 
     # Add advanced sections if enabled
     if ENABLE_ADVANCED_SECTIONS:
-        # Customer Personas - generate from feedback data
-        feedback_data = step_results.get('feedback', '')
+        # Customer Personas - only use actual research data
         personas_content = advanced_sections.get('personas', '') if advanced_sections else ''
-        if not personas_content or '*not available*' in personas_content.lower():
-            personas_content = generate_customer_personas(feedback_data)
+        if not personas_content or '*not available*' in personas_content.lower() or len(personas_content) < 100:
+            personas_content = "*Insufficient data - Customer personas could not be generated from available research data.*"
+        
+        # Risk Assessment - only use actual research data
+        risk_content = advanced_sections.get('risk', '') if advanced_sections else ''
+        if not risk_content or '*not available*' in risk_content.lower() or len(risk_content) < 100:
+            risk_content = "*Insufficient data - Risk assessment could not be generated from available research data.*"
+        
+        # Actionable Recommendations - only use actual research data
+        recommendations_content = advanced_sections.get('recommendations', '') if advanced_sections else ''
+        if not recommendations_content or '*not available*' in recommendations_content.lower() or len(recommendations_content) < 100:
+            recommendations_content = "*Insufficient data - Actionable recommendations could not be generated from available research data.*"
+        
+        # Financial Benchmarks - only use actual research data
+        financial_content = advanced_sections.get('financial', '') if advanced_sections else ''
+        if not financial_content or '*not available*' in financial_content.lower() or len(financial_content) < 100:
+            financial_content = "*Insufficient data - Financial benchmarks could not be generated from available research data. Public financial information not available.*"
+        
+        # Digital Ads - only use actual research data
+        digital_ads_content = advanced_sections.get('digital_ads', '') if advanced_sections else ''
+        if not digital_ads_content or '*not available*' in digital_ads_content.lower() or len(digital_ads_content) < 100:
+            digital_ads_content = "*Insufficient data - Digital ads analysis could not be generated from available research data.*"
+        
+        # UGC & Hashtags - only use actual research data
+        ugc_content = advanced_sections.get('ugc', '') if advanced_sections else ''
+        if not ugc_content or '*not available*' in ugc_content.lower() or len(ugc_content) < 100:
+            ugc_content = "*Insufficient data - UGC and hashtag analysis could not be generated from available research data.*"
+        
+        # Accessibility - only use actual research data
+        accessibility_content = advanced_sections.get('accessibility', '') if advanced_sections else ''
+        if not accessibility_content or '*not available*' in accessibility_content.lower() or len(accessibility_content) < 100:
+            accessibility_content = "*Insufficient data - Accessibility analysis could not be generated from available research data. Verification required from official sources.*"
+        
+        # Seasonal Trends - only use actual research data
+        seasonal_content = advanced_sections.get('seasonal', '') if advanced_sections else ''
+        if not seasonal_content or '*not available*' in seasonal_content.lower() or len(seasonal_content) < 100:
+            seasonal_content = "*Insufficient data - Seasonal trends could not be generated from available research data. Industry reports or local tourism data required.*"
+        
+        # Action Plan - only use actual research data
+        action_plan_content = advanced_sections.get('action_plan', '') if advanced_sections else ''
+        if not action_plan_content or '*not available*' in action_plan_content.lower() or len(action_plan_content) < 100:
+            action_plan_content = "*Insufficient data - Action plan could not be generated from available research data.*"
         
         report += f"""---
 
@@ -722,49 +781,49 @@ All data points are cross-verified from multiple sources. Information that could
 
 ## 12. Risk Assessment
 
-{clean_markdown(advanced_sections.get('risk', generate_risk_assessment()) if advanced_sections else generate_risk_assessment())}
+{clean_markdown(risk_content)}
 
 ---
 
 ## 13. Actionable Recommendations
 
-{clean_markdown(advanced_sections.get('recommendations', generate_action_plan(step_results.get('swot', ''))) if advanced_sections else generate_action_plan(step_results.get('swot', '')))}
+{clean_markdown(recommendations_content)}
 
 ---
 
 ## 14. Financial Benchmarks
 
-{clean_markdown(advanced_sections.get('financial', generate_financial_benchmarks(step_results.get('pricing', ''))) if advanced_sections else generate_financial_benchmarks(step_results.get('pricing', '')))}
+{clean_markdown(financial_content)}
 
 ---
 
 ## 15. Digital Ads & Paid Media
 
-{clean_markdown(advanced_sections.get('digital_ads', generate_digital_ads_analysis()) if advanced_sections else generate_digital_ads_analysis())}
+{clean_markdown(digital_ads_content)}
 
 ---
 
 ## 16. UGC & Hashtag Analysis
 
-{clean_markdown(advanced_sections.get('ugc', generate_ugc_hashtag_analysis(step_results.get('social', ''))) if advanced_sections else generate_ugc_hashtag_analysis(step_results.get('social', '')))}
+{clean_markdown(ugc_content)}
 
 ---
 
 ## 17. Accessibility & Inclusivity
 
-{clean_markdown(advanced_sections.get('accessibility', generate_accessibility_analysis()) if advanced_sections else generate_accessibility_analysis())}
+{clean_markdown(accessibility_content)}
 
 ---
 
 ## 18. Seasonal Trends
 
-{clean_markdown(advanced_sections.get('seasonal', generate_seasonal_heatmap()) if advanced_sections else generate_seasonal_heatmap())}
+{clean_markdown(seasonal_content)}
 
 ---
 
 ## 19. Next Steps / Action Plan
 
-{clean_markdown(advanced_sections.get('action_plan', generate_action_plan(step_results.get('swot', ''))) if advanced_sections else generate_action_plan(step_results.get('swot', '')))}
+{clean_markdown(action_plan_content)}
 
 """
     else:

@@ -16,7 +16,9 @@ def seo_content_agent() -> Agent:
         model=agent_model(),
         tools=all_tools(),
         instructions=[
-            "Analyze local SEO presence and content strategy for each competitor in {location}.",
+            "Perform comprehensive local SEO and content strategy analysis for {company} and competitors in {domain} in {location}. Adapt your analysis to the specific business type ({domain}).",
+            "",
+            "CRITICAL: You MUST analyze EVERY competitor discovered in the research, not just {company}. Do not skip any competitors.",
             "",
             "RESEARCH PROCESS FOR LOCAL BUSINESSES:",
             "  1. Search '{competitor} Google Maps listing {location}' → check local SEO presence",

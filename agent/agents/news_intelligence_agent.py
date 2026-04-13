@@ -16,7 +16,9 @@ def news_intelligence_agent() -> Agent:
         model=agent_model(),
         tools=all_tools(),
         instructions=[
-            "Track recent news, events, and developments for each local business competitor in {location} (last 3-6 months).",
+            "Perform comprehensive news and market intelligence analysis for {company} and competitors in {domain} in {location}. Adapt your analysis to the specific business type ({domain}).",
+            "",
+            "CRITICAL: You MUST analyze EVERY competitor discovered in the research, not just {company}. Do not skip any competitors.",
             "",
             "SEARCH QUERIES PER COMPETITOR:",
             "  1. '{competitor} {location} news 2024 2025'",
