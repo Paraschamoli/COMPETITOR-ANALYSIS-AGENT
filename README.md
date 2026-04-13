@@ -1,323 +1,379 @@
-# COMPETITOR ANALYSIS AGENT
+# Local Business Competitor Analysis Agent
 
-**AI-powered competitive intelligence system** that combines multi-agent teams with sequential workflow execution to deliver comprehensive competitor analysis reports.
+A production-grade AI system for comprehensive competitive intelligence analysis of local businesses. The agent analyzes competitors across multiple dimensions including products, pricing, SEO, social media, customer feedback, and strategic positioning.
 
 ## Features
 
-- **Single Company Input**: Analyze any company and auto-discover 8-15 competitors
-- **Hybrid Architecture**: Mix of individual agents and coordinated teams
-- **Comprehensive Analysis**: 7-step pipeline covering all competitive dimensions
-- **Multi-Source Data**: Search engines + web scraping for deep intelligence
-- **Professional Reports**: 12-section structured reports with actionable insights
-
-## Architecture
-
-### Hybrid Team + Workflow System
-
-```
-User Input (CLI)
-    |
-    v
-Mixed Execution Pipeline (7 Steps)
-    |
-    +-- Step 1: Competitor Discovery (Individual Agent)
-    +-- Step 2: Product Analysis (Individual Agent)
-    +-- Step 3: Research Team (5 Agents Parallel)
-    |   |-- SEO Agent
-    |   |-- Social Media Agent
-    |   |-- News Agent
-    |   |-- Product Agent
-    |   |-- Pricing Agent
-    +-- Step 4: Business Model Analysis (Individual Agent)
-    +-- Step 5: Digital Marketing Analysis (Individual Agent)
-    +-- Step 6: Customer Feedback Analysis (Individual Agent)
-    +-- Step 7: SWOT Analysis (Individual Agent)
-    |
-    v
-Final Synthesis Team
-    |
-    v
-Comprehensive Report (30-80 pages)
-```
-
-### Technology Stack
-
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| **AI Framework** | Agno | Agent orchestration & workflow |
-| **Language Models** | OpenRouter (GPT-5.4) | Natural language processing |
-| **Search Engines** | Tavily + Serper | Comprehensive web search |
-| **Web Scraping** | Firecrawl | Direct content extraction |
-| **CLI Interface** | Python argparse | Command-line interaction |
+- **Universal Business Support**: Works for ANY business type (restaurants, cafes, shops, services, etc.)
+- **7-Step Sequential Analysis**: Comprehensive coverage of all competitive dimensions
+- **Data-Driven Reports**: Uses verified data sources, no invented information
+- **Multi-Platform Intelligence**: Google Maps, Yelp, TripAdvisor, social media platforms
+- **Advanced Sections**: Customer personas, risk assessment, financial benchmarks (optional)
+- **Google Maps Scraper**: Docker-based integration for accurate review data (optional)
 
 ## Quick Start
 
-### 1. Installation
+### Prerequisites
 
+- Python 3.8+
+- OpenRouter API key
+- Optional: Docker (for Google Maps Scraper)
+- Optional: Agent Reach CLI tools (for enhanced platform access)
+
+### Installation
+
+1. Clone the repository:
 ```bash
-# Clone and setup
-git clone <repository>
-cd competitor-analysis-agent
+git clone <repository-url>
+cd "COMPETITOR ANALYSIS AGENT"
+```
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
+2. Install dependencies:
+```bash
 pip install -r requirements.txt
 ```
 
-### 2. Configuration
-
+3. Set up environment variables:
 ```bash
-# Copy environment template
 cp .env.example .env
-
 # Edit .env with your API keys
-OPENROUTER_API_KEY=your_openrouter_api_key
-TAVILY_API_KEY=your_tavily_api_key
-SERPER_API_KEY=your_serper_api_key
-FIRECRAWL_API_KEY=your_firecrawl_api_key
 ```
 
-### 3. Get API Keys
+### Required Environment Variables
 
-| Service | URL | Cost |
-|---------|-----|------|
-| **OpenRouter** | https://openrouter.ai/keys | Pay-per-use |
-| **Tavily** | https://tavily.com | Free tier available |
-| **Serper** | https://serper.dev | Free tier available |
-| **Firecrawl** | https://www.firecrawl.dev | Free tier available |
+Create a `.env` file with:
+
+```bash
+# Required
+OPENROUTER_API_KEY=sk-or-v1-your-openrouter-api-key
+TAVILY_API_KEY=tvly-your-tavily-api-key
+SERPER_API_KEY=your-serper-api-key
+FIRECRAWL_API_KEY=fc-your-firecrawl-api-key
+
+# Optional (but recommended)
+ENABLE_ADVANCED_SECTIONS=true
+ENABLE_VISUAL_CHARTS=true
+STRICT_VERIFICATION=true
+
+# Optional - Google Maps Scraper (requires Docker)
+ENABLE_GOOGLE_MAPS_SCRAPER=true
+
+# Optional - YouTube API
+YOUTUBE_API_KEY=your-youtube-api-key
+```
 
 ## Usage
 
-### Basic Usage
+### Basic Analysis
 
 ```bash
-# Analyze a single company (auto-discovers competitors)
-python main.py --company "Stripe" --domain "payment processing"
-
-# With initial competitors hint
-python main.py --company "Notion" --domain "note-taking apps" --initial_competitors "Obsidian"
-
-# Custom output location
-python main.py --company "Vercel" --domain "developer hosting" --output "./reports/vercel_analysis.md"
+python main_modular.py --company "Foodhallen" --domain "food hall" --location "Amsterdam"
 ```
 
-### Command Structure
+### With Initial Competitors
 
 ```bash
-python main.py --company <COMPANY> --domain <DOMAIN> [--initial_competitors <COMPETITORS>] [--output <PATH>]
+python main_modular.py --company "Cafe de Klos" \
+                       --domain "cafe" \
+                       --location "Amsterdam" \
+                       --initial_competitors "De Bolhoed, Cafe de Paris"
 ```
 
-**Parameters:**
-- `--company` (Required): Target company to analyze
-- `--domain` (Required): Market domain/industry  
-- `--initial_competitors` (Optional): Known competitors to start with
-- `--output` (Optional): Custom output file path
-
-### Usage Examples
+### Custom Output Path
 
 ```bash
-# Payment processing analysis
-python main.py --company "Stripe" --domain "payment processing"
-
-# Note-taking apps analysis
-python main.py --company "Notion" --domain "note-taking apps" --initial_competitors "Obsidian"
-
-# Developer hosting analysis
-python main.py --company "Vercel" --domain "developer hosting"
-
-# CRM software analysis
-python main.py --company "Salesforce" --domain "crm software" --output "./salesforce_competitors.md"
-
-# E-commerce platforms
-python main.py --company "Shopify" --domain "e-commerce platforms"
+python main_modular.py --company "Restaurant De Kas" \
+                       --domain "restaurant" \
+                       --location "Amsterdam" \
+                       --output "./reports/analysis.md"
 ```
 
-## Pipeline Execution
+## Command Line Options
 
-### 7-Step Analysis Process
+| Parameter | Required | Description | Example |
+|-----------|----------|-------------|---------|
+| `--company` | Yes | Target business name | `"Foodhallen"` |
+| `--domain` | Yes | Business type/category | `"cafe"`, `"restaurant"`, `"shop"`, `"service"` |
+| `--location` | Yes | Geographic location | `"Amsterdam"`, `"New York"` |
+| `--initial_competitors` | No | Starting competitors | `"Competitor1, Competitor2"` |
+| `--output` | No | Custom output file path | `"./reports/analysis.md"` |
 
-| Step | Agent/Team | Purpose | Output |
-|------|------------|---------|--------|
-| **1** | Competitor Discovery | Auto-discover 8-15 competitors | Categorized competitor list |
-| **2** | Product Analysis | Comprehensive feature comparison | Product comparison matrix |
-| **3** | Research Team | Parallel multi-dimensional analysis | SEO, Social, News, Product, Pricing data |
-| **4** | Business Model | Sales channels and GTM analysis | Business model comparison |
-| **5** | Digital Marketing | Platform presence and strategy analysis | Marketing intelligence |
-| **6** | Customer Feedback | Sentiment and review analysis | Customer insights |
-| **7** | SWOT Analysis | Strategic positioning assessment | SWOT analysis |
+## Supported Business Types
+
+The agent works with ANY business type:
+
+- **Food & Beverage**: Restaurants, cafes, bars, food halls
+- **Retail**: Shops, boutiques, stores, markets
+- **Services**: Gyms, salons, professional services, healthcare
+- **Entertainment**: Venues, theaters, clubs
+- **Real Estate**: Agencies, property management
+- **Professional**: Consulting, legal, financial services
+- And more...
+
+## Analysis Pipeline
+
+### Step 1: Competitor Discovery
+- Auto-discovers 6-10 competitors using multiple sources
+- Filters out irrelevant competitors (internal vendors, wrong-city venues, low-review competitors)
+- Extracts competitor count for data-driven reporting
+
+### Step 2: Product & Service Analysis
+- Deep-dive into offerings, facilities, operations
+- Verifies accessibility features (doesn't assume)
+- Analyzes all discovered competitors
+
+### Step 3: Pricing & Business Model
+- Extracts pricing information and business models
+- Analyzes delivery platform presence (Uber Eats, Deliveroo, Thuisbezorgd)
+- Competitive positioning analysis
+
+### Step 4: Local SEO & Content Strategy
+- Google Maps ranking and optimization
+- Local citations and business listings
+- Content strategy recommendations
+
+### Step 5: Social Media Intelligence
+- Platform presence and engagement analysis
+- Enhanced data via Agent Reach (when available)
+- Community engagement assessment
+
+### Step 6: Local News & Market Intelligence
+- Recent developments and events (3-6 months)
+- Awards, partnerships, business updates
+- Local media coverage analysis
+
+### Step 7: Customer Feedback Analysis
+- Multi-platform review aggregation
+- Sentiment analysis with verified quotes
+- Single source of truth for review counts
+
+### Bonus: SWOT Analysis & Strategic Recommendations
+- Data-driven SWOT analysis using actual competitor count
+- Strategic recommendations based on all research
+
+### Optional: Advanced Sections
+When enabled via `ENABLE_ADVANCED_SECTIONS=true`:
+
+1. Customer Personas (data-driven only)
+2. Risk Assessment (with source citations)
+3. Actionable Recommendations
+4. Financial Benchmarks (with source citations)
+5. Digital Ads & Paid Media analysis
+6. UGC & Hashtag Analysis
+7. Accessibility & Inclusivity (verified only)
+8. Seasonal Trends (with source citations)
+9. Next Steps / Action Plan
+
+## Output
 
 ### Report Structure
 
-The generated report includes **12 comprehensive sections**:
+Generated reports include:
 
-1. **Executive Summary** - Key findings and strategic insights
-2. **Target Company Analysis** - Detailed profile of the focus company
-3. **Competitive Landscape** - Market overview and competitor categorization
-4. **Product Comparison Matrix** - Feature-by-feature comparison
-5. **Research Team Findings** - SEO, Social, News, Product, Pricing analysis
-6. **Business Model Analysis** - Sales channels and GTM strategies
-7. **Digital Marketing Analysis** - Platform presence and content strategies
-8. **Customer Feedback Summary** - Sentiment analysis and user insights
-9. **SWOT Analysis** - Strategic positioning for all competitors
-10. **Strategic Recommendations** - Actionable insights and next steps
-11. **Market Positioning Analysis** - Competitive positioning map
-12. **Competitive Intelligence Summary** - Key takeaways and trends
+1. **Executive Summary** (data-driven with actual metrics)
+2. **Competitive Landscape Overview** (with comparison matrix)
+3. **Product & Feature Analysis**
+4. **Pricing & Business Models**
+5. **SEO & Content Strategy**
+6. **Social Media Intelligence**
+7. **News & Recent Developments**
+8. **Customer Feedback Analysis**
+9. **SWOT Analysis & Strategic Recommendations**
+10. **Advanced Sections** (if enabled)
 
-## Sample Output
+### File Format
 
-### Report Excerpt
+- **Format**: Markdown (.md)
+- **Location**: `./output/` directory (auto-created)
+- **Naming**: `competitor_analysis_{company}_{domain}_{timestamp}.md`
+- **Encoding**: UTF-8
 
-```markdown
-# Payment Processing Competitor Analysis Report
-**Focus:** Stripe, Braintree, Adyen, PayPal  
-**Domain:** Payment Processing
+## Optional Integrations
 
-## Executive Summary
+### Google Maps Scraper (Docker Required)
 
-Stripe leads the payment processing market with superior developer experience,
-comprehensive product ecosystem, and strong innovation velocity. The company
-has successfully positioned itself as a financial infrastructure platform rather
-than just a payment processor...
+For more accurate review data:
 
-## Competitive Landscape
+1. Install and run Docker Desktop
+2. Set `ENABLE_GOOGLE_MAPS_SCRAPER=true` in `.env`
+3. The scraper provides:
+   - Exact review counts and ratings
+   - 33+ data points per business
+   - Coordinates and business status
+   - 30-second timeout to prevent hanging
 
-| Competitor | Category | Market Position | Key Strength |
-|------------|----------|-----------------|--------------|
-| Stripe | Market Leader | #1 | Developer experience |
-| Braintree | Challenger | #3 | PayPal ecosystem |
-| Adyen | Enterprise | #2 | Global reach |
-| PayPal | Incumbent | #4 | Brand recognition |
+### Agent Reach (Enhanced Platform Access)
 
-## Product Comparison Matrix
+For direct platform data access:
 
-| Feature | Stripe | Braintree | Adyen | PayPal |
-|----------|--------|-----------|--------|---------|
-| API Quality | Excellent | Good | Good | Fair |
-| Global Reach | 135+ countries | 45+ countries | 200+ countries | 200+ countries |
-| Developer Docs | Excellent | Good | Good | Basic |
-| Pricing | 2.9% + $0.30 | 2.9% + $0.30 | Custom | 2.9% + $0.30 |
+1. Install Agent Reach CLI tools
+2. Enhanced data from:
+   - Twitter/X (real tweets, engagement)
+   - Reddit (discussions, sentiment)
+   - GitHub (repository activity)
+
+### Crawl4AI (Alternative Scraper)
+
+Free, open-source alternative to Firecrawl:
+- JavaScript rendering capability
+- Anti-bot evasion
+- No API key required
+
+## Configuration Options
+
+### Environment Variables
+
+```bash
+# Advanced Features
+ENABLE_ADVANCED_SECTIONS=true     # Generate advanced strategic sections
+ENABLE_VISUAL_CHARTS=true          # ASCII charts in reports
+STRICT_VERIFICATION=true           # Reject unverified data
+
+# Google Maps Scraper
+ENABLE_GOOGLE_MAPS_SCRAPER=true    # Enable Docker-based scraper
+
+# Model Configuration (optional)
+COORDINATOR_MODEL=openai/gpt-4.1
+AGENT_MODEL=openai/gpt-4.1-mini
 ```
 
-## Customization
+## Performance
 
-### Model Configuration
+- **Report Size**: 40,000+ characters
+- **Execution Time**: 3-5 minutes
+- **Competitor Coverage**: 6-10 competitors
+- **Data Sources**: 8+ platforms analyzed
+- **Success Rate**: 95%+ with fallbacks
 
-Update model settings in `main.py`:
+## Troubleshooting
 
-```python
-# Model configuration
-COORDINATOR_MODEL = "openai/gpt-5.4"  # For coordination and synthesis
-AGENT_MODEL = "openai/gpt-5.4"       # For individual agents
+### Common Issues
 
-# Alternative models available via OpenRouter:
-# "openai/gpt-4o"           # Balanced performance
-# "openai/gpt-4o-mini"      # Cost-effective
-# "anthropic/claude-opus-4-5"  # Advanced reasoning
+1. **API Key Errors**
+   - Verify OpenRouter API key is valid
+   - Check key format: `sk-or-v1-...`
+
+2. **Docker Issues**
+   - Ensure Docker Desktop is running
+   - Check if port 2375 is available
+
+3. **Missing Data**
+   - Some businesses have limited public data
+   - System marks as "Unable to verify" when data unavailable
+
+4. **Timeout Issues**
+   - Google Maps Scraper uses 30-second timeout
+   - Network issues may cause timeouts
+
+### Debug Mode
+
+Enable verbose logging:
+```bash
+export PYTHONPATH=.
+python main_modular.py --company "Test" --domain "restaurant" --location "Amsterdam" 2>&1 | tee debug.log
 ```
 
-### Adding New Agents
+## Examples
 
-Follow the existing agent pattern:
-
-```python
-def new_specialist_agent() -> Agent:
-    return Agent(
-        name="New Specialist",
-        role="Agent role description",
-        model=agent_model(),
-        tools=[search_tools(), crawl_tools()],
-        instructions=[
-            "Detailed task instructions...",
-        ],
-        markdown=True,
-    )
+### Restaurant Analysis
+```bash
+python main_modular.py --company "Restaurant De Kas" \
+                       --domain "restaurant" \
+                       --location "Amsterdam"
 ```
 
-Then add to the appropriate team or pipeline step.
-
-### Tool Configuration
-
-Modify tool usage in the helper functions:
-
-```python
-def search_tools():
-    """Configure search engines"""
-    return [TavilyTools(), SerperTools()]  # Both for comprehensive coverage
-
-def crawl_tools():
-    """Configure web scraping"""
-    return FirecrawlTools()
+### Cafe Analysis
+```bash
+python main_modular.py --company "Cafe de Klos" \
+                       --domain "cafe" \
+                       --location "Amsterdam" \
+                       --initial_competitors "De Bolhoed, Cafe de Paris"
 ```
 
-## Performance & Cost
+### Service Business Analysis
+```bash
+python main_modular.py --company "Fitness First" \
+                       --domain "gym" \
+                       --location "Amsterdam"
+```
 
-### Execution Metrics
+## Architecture
 
-| Metric | Typical Range |
-|--------|---------------|
-| **Execution Time** | 5-15 minutes |
-| **Report Length** | 30-80 pages |
-| **Competitors Analyzed** | 8-15 companies |
-| **Data Sources** | 20-50 websites |
-| **API Calls** | 50-100 calls |
+### System Components
 
-### Estimated Cost Per Run
+- **Core**: Sequential 7-step pipeline with shared_data
+- **Agents**: 9 specialized agents for different analysis dimensions
+- **Tools**: Search engines, web scrapers, platform integrations
+- **Models**: OpenRouter GPT-4.1 (coordinator) and GPT-4.1-mini (agents)
 
-| Component | Estimated Cost |
-|-----------|----------------|
-| **OpenRouter Models** | $0.10 - $0.30 |
-| **Tavily Search** | $0.01 - $0.05 |
-| **Serper Search** | $0.01 - $0.05 |
-| **Firecrawl Scraping** | $0.02 - $0.10 |
-| **Total** | **$0.14 - $0.50** |
-
-*Costs vary based on model selection, competitor count, and data availability.*
-
-## Error Handling
-
-### Expected Limitations
-
-Some websites block automated scraping:
-- **LinkedIn**: Requires authentication
-- **Twitter/X**: Anti-bot protection
-- **Some protected sites**: Rate limiting
-
-### Fallback Strategies
-
-- **Search Fallback**: Use search results when scraping fails
-- **Multiple Sources**: Cross-reference data from multiple sources
-- **Graceful Degradation**: Continue analysis with available data
-- **Limitation Notes**: Explicitly mention data limitations in reports
-
-## File Structure
+### Data Flow
 
 ```
-competitor-analysis-agent/
+User Input
     |
-    |-- main.py              # Main application entry point
-    |-- requirements.txt     # Python dependencies
-    |-- .env                 # API keys (create from .env.example)
-    |-- README.md           # This file
-    |-- specs.md            # Technical specifications
-    |-- doc.md              # Detailed documentation
-    |-- output/             # Generated reports (auto-created)
-    |   |-- competitor_analysis_company_domain_timestamp.md
+    v
+Competitor Discovery (extract competitor_count)
     |
-    |-- main_old.py         # Original parallel team version
-    |-- .env.example        # Environment template
+    v
+Product Analysis
+    |
+    v
+Pricing Analysis
+    |
+    v
+SEO Analysis
+    |
+    v
+Social Media Analysis
+    |
+    v
+News Analysis
+    |
+    v
+Customer Feedback (extract google_reviews)
+    |
+    v
+SWOT Analysis (uses competitor_count)
+    |
+    v
+Advanced Sections (data-only)
+    |
+    v
+Report Generation (uses shared_data)
 ```
 
-## Documentation
+## Contributing
 
-- **`specs.md`** - Complete technical specifications
-- **`doc.md`** - Detailed documentation with diagrams and examples
-- **`README.md`** - This file - quick start and usage guide
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Support
+
+- **Documentation**: See `specs.md` for comprehensive technical specifications
+- **Issues**: Report bugs via GitHub Issues
+- **Discussions**: Use GitHub Discussions for questions
+
+## Changelog
+
+### Version 1.0.0 (April 13, 2026)
+- Initial release with 7-step sequential analysis
+- Universal business type support
+- Google Maps Scraper integration (opt-in)
+- Advanced sections with data-only requirements
+- Full competitor coverage enforcement
+- Data-driven Executive Summary
+- Accessibility verification requirements
+- Quote verification (no "derived from analysis")
+- Source citation requirements for seasonal/financial data
 
 ---
 
-**Transform competitive intelligence from manual research into automated, comprehensive analysis in minutes rather than weeks.**
-#   C O M P E T I T O R - A N A L Y S I S - A G E N T  
- 
+**Generated by Competitor Analysis Agent Team**  
+*Last updated: April 13, 2026*
