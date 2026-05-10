@@ -82,8 +82,8 @@ def run_step(step_name: str, agent, prompt: str) -> str:
         print(f"  ✅ {step_name} complete ({len(content)} chars)")
         return content
     except Exception as e:
-        print(f"  ❌ {step_name} failed: {e}")
-        return f"[{step_name} failed: {e}]"
+        print(f"  ❌ {step_name} failed")
+        return f"Error: {step_name} failed – data not available."
 
 
 def main():
@@ -102,6 +102,7 @@ def main():
     # Shared data for cross-agent communication
     shared_data = {
         'competitor_count': 0,
+        'competitor_list': [],
         'google_reviews': {}
     }
 
@@ -114,18 +115,127 @@ def main():
         f" Start with these known competitors: {competitors_seed}, then find more local businesses."
     )
     
-    # Extract competitor count from discovery output
+    # Extract competitor count using regex from discovery output
+    import re
+    count_match = re.search(r"(\d+)\s*(?:competitors|key players)", step_results['discovery'], re.IGNORECASE)
+    
+    # Parse competitor data from table rows for competitor_list
     discovery_lines = step_results['discovery'].split('\n')
     table_rows = [line for line in discovery_lines if line.strip().startswith('|') and '---' not in line]
-    shared_data['competitor_count'] = max(0, len(table_rows) - 2)
+    
+    competitors = []
+    for row in table_rows[1:]:  # Skip header row
+        if row.strip():
+            columns = [col.strip() for col in row.split('|')]
+            if len(columns) >= 5:
+                # Extract name, address, rating, review count from table columns
+                # Assuming table format: | Name | Address | Rating | Review Count | ... |
+                competitor = {
+                    'name': columns[1] if len(columns) > 1 else '',
+                    'address': columns[2] if len(columns) > 2 else '',
+                    'rating': columns[3] if len(columns) > 3 else '',
+                    'review_count': columns[4] if len(columns) > 4 else ''
+                }
+                if competitor['name'] and competitor['name'] != company:
+                    competitors.append(competitor)
+    
+    shared_data['competitor_list'] = competitors
+    
+    # Set competitor_count from regex or fallback to parsed list length
+    if count_match:
+        shared_data['competitor_count'] = int(count_match.group(1))
+    else:
+        shared_data['competitor_count'] = len(competitors)
+    
     print(f"  📊 Discovered {shared_data['competitor_count']} competitors (excluding {company})")
+    
+    # Deterministic fallback: if error or fewer than 6 competitors, use search_tools directly
+    discovery_has_error = 'Error:' in step_results['discovery'] or 'failed' in step_results['discovery'].lower()
+    if discovery_has_error or len(competitors) < 6:
+        print(f"  🔄 Executing deterministic fallback: using search_tools directly")
+        from agent.tools import search_tools
+        
+        # Run fallback queries
+        fallback_queries = [
+            f"{domain} near {location}",
+            f"best {domain} in {location}",
+            f"top {domain} {location}"
+        ]
+        
+        fallback_competitors = []
+        seen_names = set()
+        
+        for query in fallback_queries:
+            if len(fallback_competitors) >= 6:
+                break
+            
+            try:
+                # Use search tools to get results
+                tools = search_tools()
+                for tool in tools:
+                    try:
+                        # Execute search
+                        result = tool.search(query)
+                        if hasattr(result, 'content'):
+                            search_text = result.content
+                        elif isinstance(result, str):
+                            search_text = result
+                        else:
+                            search_text = str(result)
+                        
+                        # Parse search results to extract business details
+                        # Simple parsing: look for business names, addresses, ratings
+                        lines = search_text.split('\n')
+                        for line in lines:
+                            if len(fallback_competitors) >= 6:
+                                break
+                            
+                            # Try to extract business info from line
+                            # This is a simple heuristic - in production, you'd use more sophisticated parsing
+                            if company.lower() not in line.lower():
+                                # Extract potential business name (first capitalized words)
+                                words = line.split()
+                                if words:
+                                    potential_name = ' '.join([w for w in words if w[0].isupper() and len(w) > 2])
+                                    if potential_name and potential_name not in seen_names and len(potential_name) > 3:
+                                        seen_names.add(potential_name)
+                                        fallback_competitors.append({
+                                            'name': potential_name,
+                                            'address': 'Address not available',
+                                            'rating': 'N/A',
+                                            'review_count': 'N/A'
+                                        })
+                    except Exception as e:
+                        # Silently continue to next tool
+                        continue
+            except Exception as e:
+                # Silently continue to next query
+                continue
+        
+        # If we found competitors via fallback, use them
+        if len(fallback_competitors) >= 6:
+            print(f"  ✅ Fallback found {len(fallback_competitors)} competitors")
+            shared_data['competitor_list'] = fallback_competitors
+            shared_data['competitor_count'] = len(fallback_competitors)
+            competitors = fallback_competitors
+        else:
+            print(f"  ⚠️  Warning: Fallback only found {len(fallback_competitors)} competitors")
+    
+    # Ensure minimum 6 competitors
+    if shared_data['competitor_count'] < 6:
+        print(f"  ⚠️  Warning: Only {shared_data['competitor_count']} competitors found. Agent should have found at least 6.")
+    
+    # Build structured competitor list from shared_data for explicit injection into prompts
+    competitor_names = [comp['name'] for comp in shared_data['competitor_list'] if comp.get('name')]
+    competitor_list_str = "\n".join(f"- {name}" for name in competitor_names)
+    competitor_prompt_addition = f"\n\nDiscovered competitors (MUST analyze every single one):\n{competitor_list_str}"
 
     # ── Step 2: Product & Service Analysis ──────────────────────────────────────
     print("\n🔬 Step 2/7: Product & Service Analysis")
     step_results["product"] = run_step(
         "Product & Service Analysis",
         product_analysis_agent(),
-        f"{context}\n\nDiscovered local competitors:\n{step_results['discovery'][:2000]}\n\n"
+        f"{context}{competitor_prompt_addition}\n\n"
         f"Now do deep product/service analysis for each competitor vs {company} in {location}."
     )
 
@@ -134,15 +244,37 @@ def main():
     step_results["pricing"] = run_step(
         "Pricing Analysis",
         pricing_business_agent(),
-        f"{context}\n\nAnalyze pricing and business model for {company} and all discovered local competitors in {location}."
+        f"{context}{competitor_prompt_addition}\n\n"
+        f"Analyze pricing and business model for {company} and all discovered local competitors in {location}."
     )
+    
+    # Extract price position from pricing output
+    pricing_text = step_results["pricing"]
+    price_position = "Data not available"
+    # Check for € symbols (€, €€, €€€)
+    if '€€€' in pricing_text:
+        price_position = "Premium"
+    elif '€€' in pricing_text:
+        price_position = "Mid-range"
+    elif '€' in pricing_text:
+        price_position = "Budget"
+    # Check for text-based price position
+    elif 'premium' in pricing_text.lower():
+        price_position = "Premium"
+    elif 'mid-range' in pricing_text.lower() or 'mid range' in pricing_text.lower():
+        price_position = "Mid-range"
+    elif 'budget' in pricing_text.lower() or 'low-cost' in pricing_text.lower():
+        price_position = "Budget"
+    shared_data['price_position'] = price_position
+    print(f"  💰 Price position: {price_position}")
 
     # ── Step 4: Local SEO & Content ────────────────────────────────────────────────
     print("\n🔍 Step 4/7: Local SEO & Content Strategy")
     step_results["seo"] = run_step(
         "Local SEO Analysis",
         seo_content_agent(),
-        f"{context}\n\nAnalyze local SEO presence and content strategy for {company} and all competitors in {location}."
+        f"{context}{competitor_prompt_addition}\n\n"
+        f"Analyze local SEO presence and content strategy for {company} and all competitors in {location}."
     )
 
     # ── Step 5: Social Media Intelligence ────────────────────────────────────────
@@ -150,7 +282,8 @@ def main():
     step_results["social"] = run_step(
         "Social Media Analysis",
         social_media_agent(),
-        f"{context}\n\nAnalyze social media presence for {company} and all local competitors in {location}."
+        f"{context}{competitor_prompt_addition}\n\n"
+        f"Analyze social media presence for {company} and all local competitors in {location}."
         f" Focus on local platforms and community engagement."
     )
     
@@ -170,7 +303,8 @@ def main():
     step_results["news"] = run_step(
         "Local News Analysis",
         news_intelligence_agent(),
-        f"{context}\n\nFind recent local news, events, and developments for {company} and competitors in {location}."
+        f"{context}{competitor_prompt_addition}\n\n"
+        f"Find recent local news, events, and developments for {company} and competitors in {location}."
         f" Focus on last 3-6 months of local business activity."
     )
 
@@ -179,10 +313,11 @@ def main():
     step_results["feedback"] = run_step(
         "Customer Feedback",
         customer_feedback_agent(),
-        f"{context}\n\nMine customer reviews from Google, Yelp, TripAdvisor for {company} and all local competitors in {location}."
+        f"{context}{competitor_prompt_addition}\n\n"
+        f"Mine customer reviews from Google, Yelp, TripAdvisor for {company} and all local competitors in {location}."
     )
     
-    # Extract Google review counts from feedback output
+    # Extract Google review counts and ratings from feedback output
     import re
     import json
     feedback_text = step_results['feedback']
@@ -197,22 +332,47 @@ def main():
                 if 'title' in data and 'review_count' in data:
                     competitor_name = data['title']
                     review_count = data['review_count']
-                    shared_data['google_reviews'][competitor_name] = review_count
+                    rating = data.get('rating', data.get('avgRating', None))
+                    shared_data['google_reviews'][competitor_name] = {'rating': rating, 'count': review_count}
             except json.JSONDecodeError:
                 continue
     
-    # Fallback: extract from text using regex
-    for match in re.finditer(r'([A-Za-z\s]+?)[\s:]+(\d+)\s+reviews', feedback_text, re.IGNORECASE):
+    # Fallback: extract from text using regex (handles search tool fallback)
+    # Pattern for "X.X/5 (N reviews)" or "X.X stars N reviews"
+    rating_count_pattern = r'([A-Za-z\s]+?)[\s:]+(\d+\.?\d*)[/\s]*(?:5|stars)[\s\(\)]+(\d+)\s+reviews'
+    for match in re.finditer(rating_count_pattern, feedback_text, re.IGNORECASE):
         competitor_name = match.group(1).strip()
-        review_count = int(match.group(2))
+        rating = float(match.group(2))
+        review_count = int(match.group(3))
         # Only add if not already extracted from scraper
         if competitor_name not in shared_data['google_reviews']:
-            shared_data['google_reviews'][competitor_name] = review_count
-    print(f"  📊 Extracted Google review counts for {len(shared_data['google_reviews'])} competitors")
+            shared_data['google_reviews'][competitor_name] = {'rating': rating, 'count': review_count}
+    
+    # Additional fallback: extract rating and count separately if combined pattern doesn't match
+    for competitor in shared_data['competitor_list']:
+        competitor_name = competitor['name']
+        if competitor_name not in shared_data['google_reviews']:
+            # Try to find rating for this competitor
+            rating_match = re.search(rf'{re.escape(competitor_name)}[^\n]*?(\d+\.?\d*)[/\s]*(?:5|stars)', feedback_text, re.IGNORECASE)
+            count_match = re.search(rf'{re.escape(competitor_name)}[^\n]*?(\d+)\s+reviews', feedback_text, re.IGNORECASE)
+            
+            rating = float(rating_match.group(1)) if rating_match else None
+            count = int(count_match.group(1)) if count_match else None
+            
+            if rating or count:
+                shared_data['google_reviews'][competitor_name] = {'rating': rating, 'count': count}
+    
+    print(f"  📊 Extracted Google review data for {len(shared_data['google_reviews'])} competitors")
 
     # ── SWOT Synthesis ────────────────────────────────────────────────────────
     print("\n🎯 Bonus: SWOT Analysis & Strategic Recommendations")
-    swot_context = f"""
+    
+    # Guard: Check if competitor discovery succeeded
+    if shared_data.get('competitor_count') is None or shared_data.get('competitor_list') is None or (shared_data.get('competitor_list') is not None and len(shared_data['competitor_list']) == 0):
+        step_results["swot"] = "Insufficient data for SWOT analysis – competitor discovery failed."
+        print("  ⚠️  SWOT analysis skipped due to insufficient competitor data")
+    else:
+        swot_context = f"""
 Business: {company} | Type: {domain} | Location: {location}
 Competitor Count: {shared_data['competitor_count']}
 
@@ -223,11 +383,11 @@ Key Local Research Findings:
 - Customer Feedback: {step_results['feedback'][:1000]}
 - Local News & Events: {step_results['news'][:800]}
 """
-    step_results["swot"] = run_step(
-        "SWOT Analysis",
-        swot_synthesis_agent(),
-        swot_context
-    )
+        step_results["swot"] = run_step(
+            "SWOT Analysis",
+            swot_synthesis_agent(),
+            swot_context
+        )
 
     # ── Advanced Sections (if enabled) ────────────────────────────────────────
     advanced_sections = {}

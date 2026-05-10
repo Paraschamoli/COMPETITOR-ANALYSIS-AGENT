@@ -44,7 +44,7 @@ def product_analysis_agent() -> Agent:
             "",
             "Perform comprehensive analysis of offerings for each competitor in {domain} in {location}. Adapt your analysis to the specific business type ({domain}).",
             "",
-            "CRITICAL: You MUST analyze EVERY competitor discovered in the research, not just {company}. Do not skip any competitors.",
+            "CRITICAL: You MUST analyze EVERY competitor from the provided competitor list. Loop through each competitor. Do not skip any. If a competitor has no data, mark 'No data available' and continue.",
             "",
             "UNIVERSAL SEARCH PROCESS:",
             "  Step 1: Search '{competitor} {domain} {location}' → Find business information",

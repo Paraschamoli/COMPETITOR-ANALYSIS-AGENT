@@ -166,15 +166,82 @@ Negative [{neg_bars:30s}] {negative_pct}%
 """
 
 
-def generate_positioning_matrix(competitors: List[Dict]) -> str:
+def generate_positioning_matrix(shared_data: Dict = None) -> str:
     """
-    Generate a 2x2 competitive positioning matrix as ASCII art.
+    Generate a 2x2 competitive positioning matrix as ASCII art using actual data.
     """
     if not ENABLE_VISUAL_CHARTS:
         return "*Positioning matrix visualization disabled*"
     
-    # Simple ASCII matrix
-    matrix = """
+    # Extract competitor data from shared_data
+    competitor_list = shared_data.get('competitor_list', []) if shared_data else []
+    google_reviews = shared_data.get('google_reviews', {}) if shared_data else {}
+    price_position = shared_data.get('price_position', 'Data not available') if shared_data else 'Data not available'
+    
+    # Categorize competitors into quadrants
+    high_price_high_exp = []
+    high_price_low_exp = []
+    low_price_high_exp = []
+    low_price_low_exp = []
+    
+    for competitor in competitor_list:
+        name = competitor.get('name', '')
+        if not name:
+            continue
+        
+        # Get rating from google_reviews or competitor data
+        rating = None
+        if name in google_reviews:
+            rating = google_reviews[name].get('rating')
+        if not rating:
+            # Try to extract from competitor data
+            rating_str = competitor.get('rating', '')
+            if rating_str:
+                try:
+                    rating = float(rating_str.split('/')[0])
+                except (ValueError, IndexError):
+                    pass
+        
+        # Map price position to Low/Mid/High
+        # Use the global price_position as baseline, but could be per-competitor
+        if price_position == 'Premium':
+            comp_price = 'High'
+        elif price_position == 'Budget':
+            comp_price = 'Low'
+        elif price_position == 'Mid-range':
+            comp_price = 'Mid'
+        else:
+            comp_price = 'Mid'  # Default
+        
+        # Determine experience score from rating (1-5 scale)
+        if rating:
+            if rating >= 4.0:
+                experience = 'High'
+            elif rating >= 3.0:
+                experience = 'Mid'
+            else:
+                experience = 'Low'
+        else:
+            experience = 'Mid'  # Default if no rating
+        
+        # Categorize into quadrants
+        if comp_price == 'High' and experience == 'High':
+            high_price_high_exp.append(name)
+        elif comp_price == 'High' and experience == 'Low':
+            high_price_low_exp.append(name)
+        elif comp_price == 'Low' and experience == 'High':
+            low_price_high_exp.append(name)
+        elif comp_price == 'Low' and experience == 'Low':
+            low_price_low_exp.append(name)
+        elif comp_price == 'Mid' and experience == 'High':
+            low_price_high_exp.append(name)  # Mid price with high exp = value
+        elif comp_price == 'Mid' and experience == 'Low':
+            low_price_low_exp.append(name)  # Mid price with low exp = budget
+        else:
+            low_price_low_exp.append(name)  # Default
+    
+    # Build matrix with actual competitor names
+    matrix = f"""
 **Competitive Positioning Matrix (Price vs. Experience Quality):**
 
 ```
@@ -182,16 +249,12 @@ High Experience
       ↑
       │  [Premium Segment]
       │  ┌─────────────┐
-      │  │             │
-      │  │  Leader     │
-      │  │             │
+      │  │ {', '.join(high_price_high_exp[:3]) if high_price_high_exp else 'Empty'} │
       │  └─────────────┘
       │
       │  [Value Segment]
       │  ┌─────────────┐
-      │  │             │
-      │  │  Challenger │
-      │  │             │
+      │  │ {', '.join(low_price_high_exp[:3]) if low_price_high_exp else 'Empty'} │
       │  └─────────────┘
       │
       └─────────────────────────→ High Price
@@ -199,10 +262,10 @@ High Experience
 ```
 
 **Quadrant Analysis:**
-- **Leader (High Price, High Experience):** Premium positioning with superior service
-- **Challenger (Low Price, High Experience):** Best value proposition
-- **Budget (Low Price, Low Experience):** Cost-focused, basic offerings
-- **Premium (High Price, Low Experience):** Overpriced relative to experience
+- **High Price, High Experience:** {', '.join(high_price_high_exp) if high_price_high_exp else 'None'} - Premium positioning with superior service
+- **Low Price, High Experience:** {', '.join(low_price_high_exp) if low_price_high_exp else 'None'} - Best value proposition
+- **Low Price, Low Experience:** {', '.join(low_price_low_exp) if low_price_low_exp else 'None'} - Cost-focused, basic offerings
+- **High Price, Low Experience:** {', '.join(high_price_low_exp) if high_price_low_exp else 'None'} - Overpriced relative to experience
 """
     return matrix
 
@@ -566,22 +629,22 @@ def synthesize_final_report(
     # Extract top praise category and percentage from feedback
     feedback_text = step_results.get('feedback', '')
     import re
-    top_praise_match = re.search(r'Food Quality.*?~(\d+)%', feedback_text, re.IGNORECASE)
-    top_praise_pct = top_praise_match.group(1) if top_praise_match else "N/A"
+    # Try multiple patterns for top praise percentage
+    top_praise_match = re.search(r'(\d+)%.*?positive', feedback_text, re.IGNORECASE)
+    if not top_praise_match:
+        top_praise_match = re.search(r'positive.*?(\d+)%', feedback_text, re.IGNORECASE)
+    if not top_praise_match:
+        top_praise_match = re.search(r'~(\d+)%', feedback_text, re.IGNORECASE)
+    top_praise_pct = top_praise_match.group(1) if top_praise_match else "Data not available"
     
-    # Extract price position from pricing data
-    pricing_text = step_results.get('pricing', '')
-    price_position = "Mid-range"
-    if 'premium' in pricing_text.lower():
-        price_position = "Premium"
-    elif 'budget' in pricing_text.lower() or 'low-cost' in pricing_text.lower():
-        price_position = "Budget"
+    # Use price position from shared_data (extracted in main_modular.py)
+    price_position = shared_data.get('price_position', 'Data not available') if shared_data else 'Data not available'
     
-    # Extract actual competitor names from discovery
-    discovery_text = step_results.get('discovery', '')
-    competitor_names = re.findall(r'\|\s*([A-Za-z][A-Za-z\s&]+?)\s*\|', discovery_text)
-    competitor_names = [name.strip() for name in competitor_names if name.strip() and name.lower() != company.lower() and len(name) > 2][:5]
-    competitors_str = ', '.join(competitor_names) if competitor_names else "Auto-discovered"
+    # Use actual competitor names from shared_data['competitor_list']
+    competitor_names = []
+    if shared_data and 'competitor_list' in shared_data and shared_data['competitor_list']:
+        competitor_names = [comp['name'] for comp in shared_data['competitor_list'] if comp.get('name')]
+    competitors_str = ', '.join(competitor_names[:5]) if competitor_names else "Data not available"
     
     executive_summary = f"""
 **Top 3 Insights:**
@@ -840,7 +903,7 @@ All data points are cross-verified from multiple sources. Information that could
 
     # Add visual positioning matrix if enabled
     if ENABLE_VISUAL_CHARTS:
-        report += generate_positioning_matrix([])
+        report += generate_positioning_matrix(shared_data)
         report += "\n---\n\n"
 
     report += f"""*Report generated by Competitor Analysis Agent | Data sourced from public web, Google Maps, Yelp, TripAdvisor, and official sources. All data verified to the extent possible from public information.*"""
