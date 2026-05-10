@@ -1410,33 +1410,8 @@ AGENT_MODEL = "openai/gpt-4.1-mini"         # Efficient for analysis
 - **Enhanced Features**: Enable Agent Reach when available
 - **API Management**: Monitor usage and quotas proactively
 
----
 
-## 🔮 Future Roadmap
 
-### **Phase 1: Enhanced Intelligence (Current - Q2 2026)**
-- ✅ Agent Reach integration with platform access
-- ✅ Multi-platform data collection capabilities
-- ✅ Enhanced error handling and fallback systems
-- ✅ Performance optimization and context management
-
-### **Phase 2: Advanced Features (Q3-Q4 2026)**
-- **Real-time Monitoring**: Continuous competitive intelligence updates
-- **Predictive Analytics**: Market trend prediction and forecasting
-- **Custom Integrations**: Support for additional data sources
-- **API Rate Limiting**: Intelligent quota management
-
-### **Phase 3: Enterprise Features (Q1-Q2 2027)**
-- **Team Collaboration**: Multi-user analysis and sharing
-- **Custom Workflows**: User-defined analysis pipelines
-- **Industry Templates**: Pre-configured analysis for specific sectors
-- **API Access**: Programmatic access to analysis capabilities
-
-### **Phase 4: AI Enhancement (H2 2027)**
-- **Multi-language Support**: Analysis of non-English competitors
-- **Advanced NLP**: Sentiment analysis and topic modeling
-- **Visual Intelligence**: Logo recognition and visual brand analysis
-- **Automated Insights**: AI-powered strategic recommendations
 
 ---
 

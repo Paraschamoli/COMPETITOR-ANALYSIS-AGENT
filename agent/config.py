@@ -16,8 +16,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Model configuration
-COORDINATOR_MODEL = "openai/gpt-4.1"   # or claude-sonnet-4-5, gemini/gemini-2.0-flash
-AGENT_MODEL = "openai/gpt-4.1-mini"
+# Updated Configuration for better/cheaper performance
+COORDINATOR_MODEL ="x-ai/grok-4.3"   #"moonshotai/kimi-k2.6"  # Higher reasoning, 75% cheaper
+AGENT_MODEL = "openai/gpt-oss-120b:nitro"     # Faster extraction, 80% cheaper
+
+# Or for context-heavy needs:
+# COORDINATOR_MODEL = "google/gemini-3.1-pro"
 
 # Optional: Crawl4AI (free, open-source alternative/supplement to Firecrawl)
 try:
