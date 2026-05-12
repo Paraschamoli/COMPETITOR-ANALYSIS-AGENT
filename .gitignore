@@ -178,9 +178,9 @@ cython_debug/
 *.vsix
 
 # Output directory
-output/
-reports/
-*.md
+# output/
+# reports/
+# *.md
 
 # Temporary files
 *.tmp
