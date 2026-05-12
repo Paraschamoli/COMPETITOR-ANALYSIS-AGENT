@@ -16,6 +16,8 @@ def news_intelligence_agent() -> Agent:
         model=agent_model(),
         tools=all_tools(),
         instructions=[
+            "Before analyzing, check {domain} parameter. Adapt your output format and analysis categories to specific business type. Do not assume business sells food, has a physical store, or offers delivery. Use generic terms like 'core offering', 'service category', 'product line' unless domain clearly implies specific categories.",
+            "",
             "Perform comprehensive news and market intelligence analysis for {company} and competitors in {domain} in {location}. Adapt your analysis to the specific business type ({domain}).",
             "",
             "CRITICAL: You MUST analyze EVERY competitor from the provided competitor list. Loop through each competitor. Do not skip any. If a competitor has no data, mark 'No data available' and continue.",
@@ -53,6 +55,9 @@ def news_intelligence_agent() -> Agent:
             "  - Seasonal sales or promotional events",
             "  - Pop-up shops or market participation",
             "  - Local artisan collaborations",
+            "TOKEN LIMIT:",
+            "- Your output must be under 5000 characters. Be concise but complete.",
+            "- If you cannot fit all data, prioritize: name, rating, price range, top unique feature.",
             "",
             "FOR SERVICE BUSINESSES:",
             "  - New service offerings or specialties",

@@ -319,51 +319,6 @@ def add_verification_column_to_tables(text: str) -> str:
     return '\n'.join(result)
 
 
-def generate_customer_personas(feedback_data: str) -> str:
-    """
-    Generate customer personas from review data using keyword clustering.
-    Returns 3 personas based on common themes.
-    """
-    # Extract themes from feedback data
-    themes = {
-        'tourist': ['tourist', 'visitor', 'trip', 'vacation', 'travel'],
-        'local': ['local', 'regular', 'neighborhood', 'weekly', 'daily'],
-        'business': ['meeting', 'work', 'lunch', 'professional', 'wifi']
-    }
-    
-    # Count theme mentions
-    theme_counts = {}
-    for theme, keywords in themes.items():
-        count = sum(1 for keyword in keywords if keyword.lower() in feedback_data.lower())
-        theme_counts[theme] = count
-    
-    # Generate personas based on most common themes
-    personas = []
-    
-    # Persona 1: Based on most common theme
-    top_theme = max(theme_counts, key=theme_counts.get) if theme_counts else 'local'
-    
-    personas.append(f"""
-**Persona 1: The {top_theme.title()} Enthusiast**
-- **Demographics:** Age 25-40, income €40K+, professional or student
-- **Behavior:** Visits 2-3 times per month, spends €20-30, explores new offerings
-- **Motivations:** Quality, variety, social experience
-- **Pain Points:** Crowding during peak hours, wait times
-- **Quote:** "Great variety but gets crowded" - Derived from review analysis
-""")
-
-    # Persona 2: Secondary theme
-    sorted_themes = sorted(theme_counts.items(), key=lambda x: x[1], reverse=True)
-    second_theme = sorted_themes[1][0] if len(sorted_themes) > 1 else 'business'
-    
-    personas.append(f"""
-**Persona 2: The {second_theme.title()}**
-- **Demographics:** Age 30-50, income €50K+, established professional
-- **Behavior:** Visits weekly, spends €15-25, orders favorites
-- **Motivations:** Consistency, value, convenience
-- **Pain Points:** Price changes, menu rotation
-- **Quote:** "Reliable choice for regular visits" - Derived from review analysis
-""")
 
     # Persona 3: Value-focused
     personas.append(f"""
@@ -395,59 +350,9 @@ def generate_risk_assessment() -> str:
 """
 
 
-def generate_financial_benchmarks(pricing_data: str) -> str:
-    """
-    Generate financial benchmarks using pricing data and industry defaults.
-    """
-    # Extract average price from pricing data
-    import re
-    prices = re.findall(r'€(\d+\.?\d*)', pricing_data)
-    if prices:
-        avg_price = sum(float(p) for p in prices[:10]) / min(len(prices), 10)
-    else:
-        avg_price = 20.0  # Industry default
-    
-    # Calculate estimates
-    avg_spend = avg_price * 1.5  # Average order with drink/sides
-    monthly_traffic = 10000  # Industry default for food halls
-    monthly_revenue = avg_spend * monthly_traffic
-    
-    return f"""
-**Estimated Financial Performance:**
-- **Average Spend per Visitor:** €{avg_spend:.2f} (based on pricing analysis)
-- **Estimated Monthly Foot Traffic:** {monthly_traffic:,} visitors (industry benchmark)
-- **Average Revenue per Month:** €{monthly_revenue:,.0f} (calculated from above)
-- **Peak vs. Off-Peak Revenue Ratio:** 1.8:1 (seasonal variation)
-- **Market Share Estimate:** 25-35% of local market (based on competitor count)
-
-**Cost Structure (Industry Benchmarks):**
-- **Food/Service Cost:** 30-35% of revenue
-- **Labor Cost:** 25-30% of revenue
-- **Rent/Overhead:** 15-20% of revenue
-- **Marketing:** 3-5% of revenue
-- **Profit Margin:** 15-20% (industry average for food halls)
-"""
 
 
-def generate_digital_ads_analysis() -> str:
-    """
-    Generate digital ads analysis. If no ads detected, state clearly.
-    """
-    return """
-**Current Advertising Presence:**
-- **Google Ads:** No visible ads detected for target or competitors
-- **Facebook/Instagram Ads:** No visible ads detected
-- **Other Platforms:** No visible paid media presence
-
-**Recommended Ad Strategy:**
-- **Primary Platforms:** Google Ads (local search), Instagram (visual content)
-- **Target Audiences:** Local residents (3km radius), tourists (location-based)
 - **Budget Allocation:** 60% Google Search, 30% Instagram, 10% Facebook
-- **Key Messaging:** Unique offerings, local authenticity, quality
-- **Seasonal Adjustments:** Increase spend during peak months (Jun-Aug, Dec)
-"""
-
-
 def generate_ugc_hashtag_analysis(social_data: str) -> str:
     """
     Generate UGC and hashtag analysis from social media data.
@@ -467,12 +372,6 @@ def generate_ugc_hashtag_analysis(social_data: str) -> str:
     return f"""
 **Top Performing Hashtags:**
 - {hashtag_str}
-
-**UGC Campaign Recommendations:**
-- **Campaign Idea 1:** "My Food Hall Journey" - Encourage visitors to share their experience
-- **Campaign Idea 2:** "Hidden Gem Discovery" - Highlight lesser-known vendors
-- **Incentive Structure:** Feature best posts on official social media, monthly giveaways
-- **Content Guidelines:** Focus on food photos, vendor stories, community atmosphere
 """
 
 

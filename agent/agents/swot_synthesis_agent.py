@@ -8,7 +8,7 @@ from ..models import coordinator_model
 
 
 def swot_synthesis_agent() -> Agent:
-    """Create and return the Strategic SWOT Analyst agent"""
+    """Create and return Strategic SWOT Analyst agent"""
     return Agent(
         name="Strategic SWOT Analyst",
         role="Synthesize all research into actionable SWOT analyses and strategic recommendations.",
@@ -19,6 +19,10 @@ def swot_synthesis_agent() -> Agent:
             "AND a final strategic recommendation section for {company}.",
             "",
             "DO NOT include an Executive Summary in this section - it is generated separately in the report.",
+            "",
+            "GUARD CONDITION:",
+            "If competitor_count is None or not an integer, skip analysis and return 'Insufficient data'.",
+            "Never call len() on a None value.",
             "",
             "DATA-DRIVEN ANALYSIS REQUIREMENTS:",
             "- **Competitor Count:** CRITICAL - Use the exact competitor_count provided in the context. The context will include 'Competitor Count: X' - use this exact number. Do NOT use hardcoded values like '1 key players' or '5 key players'.",

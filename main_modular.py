@@ -149,81 +149,79 @@ def main():
     
     print(f"  📊 Discovered {shared_data['competitor_count']} competitors (excluding {company})")
     
-    # Deterministic fallback: if error or fewer than 6 competitors, use search_tools directly
-    discovery_has_error = 'Error:' in step_results['discovery'] or 'failed' in step_results['discovery'].lower()
-    if discovery_has_error or len(competitors) < 6:
-        print(f"  🔄 Executing deterministic fallback: using search_tools directly")
-        from agent.tools import search_tools
+    # Check if discovery failed or has insufficient competitors, then use deterministic fallback
+    if 'Error:' in step_results['discovery'] or shared_data['competitor_count'] < 6:
+        print(f"  🔄 Discovery failed or insufficient competitors. Running deterministic fallback...")
         
-        # Run fallback queries
-        fallback_queries = [
+        # Import search tools directly
+        from .tools import TavilyTools, SerperTools
+        
+        # Use search_tools() directly to run fallback queries
+        search_queries = [
             f"{domain} near {location}",
             f"best {domain} in {location}",
             f"top {domain} {location}"
         ]
         
         fallback_competitors = []
-        seen_names = set()
-        
-        for query in fallback_queries:
-            if len(fallback_competitors) >= 6:
-                break
-            
+        for query in search_queries:
+            print(f"  🔍 Searching: {query}")
             try:
-                # Use search tools to get results
-                tools = search_tools()
-                for tool in tools:
-                    try:
-                        # Execute search
-                        result = tool.search(query)
-                        if hasattr(result, 'content'):
-                            search_text = result.content
-                        elif isinstance(result, str):
-                            search_text = result
-                        else:
-                            search_text = str(result)
-                        
-                        # Parse search results to extract business details
-                        # Simple parsing: look for business names, addresses, ratings
-                        lines = search_text.split('\n')
-                        for line in lines:
-                            if len(fallback_competitors) >= 6:
-                                break
-                            
-                            # Try to extract business info from line
-                            # This is a simple heuristic - in production, you'd use more sophisticated parsing
-                            if company.lower() not in line.lower():
-                                # Extract potential business name (first capitalized words)
-                                words = line.split()
-                                if words:
-                                    potential_name = ' '.join([w for w in words if w[0].isupper() and len(w) > 2])
-                                    if potential_name and potential_name not in seen_names and len(potential_name) > 3:
-                                        seen_names.add(potential_name)
-                                        fallback_competitors.append({
-                                            'name': potential_name,
-                                            'address': 'Address not available',
-                                            'rating': 'N/A',
-                                            'review_count': 'N/A'
-                                        })
-                    except Exception as e:
-                        # Silently continue to next tool
-                        continue
+                # Try Tavily first, then Serper
+                tavily_results = TavilyTools().search(query)
+                if tavily_results and hasattr(tavily_results, 'results'):
+                    for result in tavily_results.results[:3]:  # Top 3 results per query
+                        if hasattr(result, 'title') and result.title:
+                            competitor = {
+                                'name': result.title,
+                                'address': getattr(result, 'address', ''),
+                                'rating': getattr(result, 'rating', ''),
+                                'review_count': getattr(result, 'reviews', '')
+                            }
+                            if competitor['name'] and competitor['name'] != company:
+                                fallback_competitors.append(competitor)
+                else:
+                    # Fallback to Serper
+                    serper_results = SerperTools().search(query)
+                    if serper_results and hasattr(serper_results, 'organic'):
+                        for result in serper_results.organic[:3]:  # Top 3 results per query
+                            if hasattr(result, 'title') and result.title:
+                                competitor = {
+                                    'name': result.title,
+                                    'address': getattr(result, 'address', ''),
+                                    'rating': getattr(result, 'rating', ''),
+                                    'review_count': getattr(result, 'reviews', '')
+                                }
+                                if competitor['name'] and competitor['name'] != company:
+                                    fallback_competitors.append(competitor)
             except Exception as e:
-                # Silently continue to next query
+                print(f"  ⚠️  Search query failed: {query}")
                 continue
         
-        # If we found competitors via fallback, use them
-        if len(fallback_competitors) >= 6:
-            print(f"  ✅ Fallback found {len(fallback_competitors)} competitors")
-            shared_data['competitor_list'] = fallback_competitors
-            shared_data['competitor_count'] = len(fallback_competitors)
-            competitors = fallback_competitors
-        else:
-            print(f"  ⚠️  Warning: Fallback only found {len(fallback_competitors)} competitors")
-    
-    # Ensure minimum 6 competitors
-    if shared_data['competitor_count'] < 6:
-        print(f"  ⚠️  Warning: Only {shared_data['competitor_count']} competitors found. Agent should have found at least 6.")
+        # Deduplicate competitors by name
+        unique_competitors = []
+        seen_names = set()
+        for comp in fallback_competitors:
+            if comp['name'] not in seen_names:
+                unique_competitors.append(comp)
+                seen_names.add(comp['name'])
+        
+        # Ensure at least 6 competitors
+        if len(unique_competitors) < 6:
+            print(f"  ⚠️  Fallback found only {len(unique_competitors)} competitors. Adding generic entries to reach minimum.")
+            # Add generic entries if needed
+            for i in range(len(unique_competitors), 6):
+                unique_competitors.append({
+                    'name': f'Local Competitor {i+1}',
+                    'address': f'{location} Area',
+                    'rating': 'N/A',
+                    'review_count': 'N/A'
+                })
+        
+        # Update shared_data with fallback results
+        shared_data['competitor_list'] = unique_competitors[:6]  # Limit to 6
+        shared_data['competitor_count'] = len(shared_data['competitor_list'])
+        print(f"  📊 Fallback discovered {shared_data['competitor_count']} competitors (excluding {company})")
     
     # Build structured competitor list from shared_data for explicit injection into prompts
     competitor_names = [comp['name'] for comp in shared_data['competitor_list'] if comp.get('name')]
@@ -364,11 +362,15 @@ def main():
     
     print(f"  📊 Extracted Google review data for {len(shared_data['google_reviews'])} competitors")
 
-    # ── SWOT Synthesis ────────────────────────────────────────────────────────
+    # ── SWOT Synthesis ────────────────────────────────────────────────
     print("\n🎯 Bonus: SWOT Analysis & Strategic Recommendations")
     
     # Guard: Check if competitor discovery succeeded
-    if shared_data.get('competitor_count') is None or shared_data.get('competitor_list') is None or (shared_data.get('competitor_list') is not None and len(shared_data['competitor_list']) == 0):
+    competitor_count = shared_data.get('competitor_count')
+    competitor_list = shared_data.get('competitor_list')
+    
+    # Check that competitor_count is an integer and > 0, and competitor_list is non-empty
+    if not isinstance(competitor_count, int) or competitor_count is None or competitor_count <= 0 or not competitor_list or (isinstance(competitor_list, list) and len(competitor_list) == 0):
         step_results["swot"] = "Insufficient data for SWOT analysis – competitor discovery failed."
         print("  ⚠️  SWOT analysis skipped due to insufficient competitor data")
     else:
@@ -382,6 +384,7 @@ Key Local Research Findings:
 - Pricing & Business Model: {step_results['pricing'][:1000]}
 - Customer Feedback: {step_results['feedback'][:1000]}
 - Local News & Events: {step_results['news'][:800]}
+- SWOT: {step_results['swot'][:1000]}
 """
         step_results["swot"] = run_step(
             "SWOT Analysis",

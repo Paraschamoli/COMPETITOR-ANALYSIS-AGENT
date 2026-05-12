@@ -185,8 +185,8 @@ def competitor_discovery_agent() -> Agent:
             "- You must complete your final sentence. Never end with a hyphen, an incomplete word, or a cut-off table cell. If you reach a length limit, finish the current sentence and stop.",
             "",
             "TOKEN LIMIT:",
-            "- Your output must be under 2500 characters. Be concise.",
+            "- Your output must be under 8000 characters. Be concise but complete.",
             "- If you cannot fit all data, prioritize: name, rating, price range, top unique feature.",
-        ],
+            "",
         markdown=True,
     )

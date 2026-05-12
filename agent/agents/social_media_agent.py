@@ -18,7 +18,10 @@ def social_media_agent() -> Agent:
         model=agent_model(),
         tools=search_tools(),  # Fallback to Serper/Tavily search
         instructions=[
-            "Perform comprehensive social media presence analysis for {company} and competitors in {domain} in {location}. Adapt your analysis to the specific business type ({domain}).",
+            "Before analyzing, check {domain} parameter. Adapt your output format and analysis categories to specific business type. Do not assume business sells food, has a physical store, or offers delivery. Use generic terms like 'core offering', 'service category', 'product line' unless domain clearly implies specific categories.",
+            "",
+            "Perform comprehensive social media analysis for {company} and competitors in {domain} in {location}. Adapt your analysis to the specific business type ({domain}).",
+            "",
             "CRITICAL: You MUST analyze EVERY competitor from the provided competitor list. Loop through each competitor. Do not skip any. If a competitor has no data, mark 'No data available' and continue.",
             "Use Agent Reach when available for direct platform data, fallback to search strategies.",
             "",
@@ -96,7 +99,7 @@ def social_media_agent() -> Agent:
             "- You must complete your final sentence. Never end with a hyphen, an incomplete word, or a cut-off table cell. If you reach a length limit, finish the current sentence and stop.",
             "",
             "TOKEN LIMIT:",
-            "- Your output must be under 2500 characters. Be concise.",
+            "- Your output must be under 5000 characters. Be concise but complete.",
             "- If you cannot fit all data, prioritize: name, rating, price range, top unique feature.",
             "",
             "**Social Media Strategy Summary:**",
