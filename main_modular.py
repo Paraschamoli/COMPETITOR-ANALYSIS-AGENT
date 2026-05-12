@@ -154,7 +154,7 @@ def main():
         print(f"  🔄 Discovery failed or insufficient competitors. Running deterministic fallback...")
         
         # Import search tools directly
-        from .tools import TavilyTools, SerperTools
+        from agents.tools import TavilyTools, SerperTools
         
         # Use search_tools() directly to run fallback queries
         search_queries = [

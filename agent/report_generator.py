@@ -349,10 +349,6 @@ def generate_risk_assessment() -> str:
 **Risk Summary:** The highest-priority threat is changing consumer preferences toward delivery and convenience. Mitigation requires expanding delivery partnerships and optimizing for takeout.
 """
 
-
-
-
-- **Budget Allocation:** 60% Google Search, 30% Instagram, 10% Facebook
 def generate_ugc_hashtag_analysis(social_data: str) -> str:
     """
     Generate UGC and hashtag analysis from social media data.
