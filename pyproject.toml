@@ -1,0 +1,100 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "competitor-analysis-agent"
+version = "0.1.0"
+description = "Modular competitor analysis agent with specialized analysis capabilities"
+authors = [
+    {name = "Competitor Analysis Team", email = "team@example.com"}
+]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "agno",
+    "openai",
+    "duckduckgo-search",
+    "firecrawl-py",
+    "python-dotenv",
+    "tavily-python",
+    "crawl4ai",
+    "beautifulsoup4",
+    "lxml",
+    "playwright",
+    "markdown",
+    "requests",
+    "pandas",
+    "numpy",
+    "scipy",
+    "scikit-learn",
+    "nltk",
+    "wordcloud",
+    "matplotlib",
+    "seaborn",
+    "plotly",
+    "geopy",
+    "folium",
+    "networkx",
+    "lark",
+    "jsonschema",
+    "pydantic",
+    "typer",
+    "rich",
+    "click",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "flake8",
+    "mypy",
+]
+
+[project.urls]
+Homepage = "https://github.com/example/competitor-analysis-agent"
+Repository = "https://github.com/example/competitor-analysis-agent.git"
+Documentation = "https://github.com/example/competitor-analysis-agent#readme"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agent"]
+
+[tool.hatch.envs.default]
+dependencies = [
+    "coverage[toml]",
+    "pytest",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  \.git
+  \.hg
+  \.mypy_cache
+  \.tox
+  \.venv
+  _build
+  buck-out
+  build
+  dist
+)/
+'''
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --strict-markers"
+testpaths = [
+    "tests",
+]

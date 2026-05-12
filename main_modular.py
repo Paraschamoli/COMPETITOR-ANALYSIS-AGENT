@@ -154,7 +154,7 @@ def main():
         print(f"  🔄 Discovery failed or insufficient competitors. Running deterministic fallback...")
         
         # Import search tools directly
-        from agents.tools import TavilyTools, SerperTools
+        from agent.tools import TavilyTools, SerperTools
         
         # Use search_tools() directly to run fallback queries
         search_queries = [
@@ -384,7 +384,6 @@ Key Local Research Findings:
 - Pricing & Business Model: {step_results['pricing'][:1000]}
 - Customer Feedback: {step_results['feedback'][:1000]}
 - Local News & Events: {step_results['news'][:800]}
-- SWOT: {step_results['swot'][:1000]}
 """
         step_results["swot"] = run_step(
             "SWOT Analysis",

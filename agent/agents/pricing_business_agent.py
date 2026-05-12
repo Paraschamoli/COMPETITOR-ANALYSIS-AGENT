@@ -94,7 +94,7 @@ def pricing_business_agent() -> Agent:
             "  4. Search '{competitor} consultation fee free estimate' → assess pricing approach",
             "",
             "DELIVERY PLATFORM CONDITIONAL CHECK:",
-            f"- Only include delivery platform analysis if {domain} is one of: restaurant, cafe, food hall, bar, bakery, fast food, grocery, or any business that typically delivers",
+            "- Only include delivery platform analysis if the `{domain}` is one of: restaurant, cafe, food hall, bar, bakery, fast food, grocery, or any business that typically delivers",
             "- For other domains (gym, salon, law firm, real estate, etc.), skip delivery analysis section entirely",
             "",
             "COMPREHENSIVE PRICING ANALYSIS PER COMPETITOR:",
