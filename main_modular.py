@@ -50,7 +50,6 @@ def banner(args):
     print(f"  Crawl4AI       : {'✅ Available' if CRAWL4AI_AVAILABLE else '❌ Not installed'}")
     print(f"  Agent Reach    : {'✅ Available' if AGENT_REACH_AVAILABLE else '❌ Not installed'}")
     print(f"  Google Maps Scraper : {'✅ Available' if GOOGLE_MAPS_SCRAPER_AVAILABLE else '❌ Not available (Docker required)'}")
-    print(f"  YouTube API    : {'✅ Configured' if YOUTUBE_AVAILABLE else '❌ Not configured (add YOUTUBE_API_KEY to .env)'}")
     print(f"  Advanced Sects : {'✅ Enabled' if ENABLE_ADVANCED_SECTIONS else '❌ Disabled (set ENABLE_ADVANCED_SECTIONS=true)'}")
     print("═" * w)
     
