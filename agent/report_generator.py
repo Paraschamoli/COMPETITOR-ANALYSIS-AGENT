@@ -350,9 +350,6 @@ def generate_risk_assessment() -> str:
 """
 
 
-
-
-- **Budget Allocation:** 60% Google Search, 30% Instagram, 10% Facebook
 def generate_ugc_hashtag_analysis(social_data: str) -> str:
     """
     Generate UGC and hashtag analysis from social media data.
