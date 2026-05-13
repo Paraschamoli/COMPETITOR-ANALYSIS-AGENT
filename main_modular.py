@@ -205,9 +205,11 @@ def main():
     
     # Shared data for cross-agent communication
     shared_data = {
-        'competitor_count': 0,
-        'competitor_list': [],
-        'google_reviews': {}
+        "company": company,
+        "competitor_count": 0,
+        "competitor_list": [],
+        "google_reviews": {},
+        "per_competitor_prices": {},
     }
 
     # ── Step 1: Competitor Discovery ──────────────────────────────────────────
@@ -353,25 +355,77 @@ def main():
         location=location,
     )
     
-    # Extract price position from pricing output
+    # Extract target company's price position only from its own section (not whole pricing doc)
     pricing_text = step_results["pricing"]
-    price_position = "Data not available"
-    # Check for € symbols (€, €€, €€€)
-    if '€€€' in pricing_text:
-        price_position = "Premium"
-    elif '€€' in pricing_text:
-        price_position = "Mid-range"
-    elif '€' in pricing_text:
-        price_position = "Budget"
-    # Check for text-based price position
-    elif 'premium' in pricing_text.lower():
-        price_position = "Premium"
-    elif 'mid-range' in pricing_text.lower() or 'mid range' in pricing_text.lower():
-        price_position = "Mid-range"
-    elif 'budget' in pricing_text.lower() or 'low-cost' in pricing_text.lower():
-        price_position = "Budget"
-    shared_data['price_position'] = price_position
-    print(f"  💰 Price position: {price_position}")
+    price_position = "Mid-range"
+    company_section = re.search(
+        rf"(?:###|##)\s*{re.escape(company)}.*?(?=(?:###|##)\s|\Z)",
+        pricing_text,
+        re.DOTALL | re.IGNORECASE,
+    )
+    scan_text = company_section.group(0) if company_section else pricing_text[:500]
+
+    pos_match = re.search(r"Overall Price Position[:\s]+([^\n]+)", scan_text, re.IGNORECASE)
+    if pos_match:
+        raw = pos_match.group(1).lower()
+        if "premium" in raw or "€€€" in raw:
+            price_position = "Premium"
+        elif "mid" in raw or "€€" in raw:
+            price_position = "Mid-range"
+        elif "budget" in raw or "€" in raw:
+            price_position = "Budget"
+    else:
+        if "€€€" in scan_text:
+            price_position = "Premium"
+        elif "€€" in scan_text and "€€€" not in scan_text:
+            price_position = "Mid-range"
+        elif "€" in scan_text and "€€" not in scan_text:
+            price_position = "Budget"
+        else:
+            sl = scan_text.lower()
+            if "premium" in sl:
+                price_position = "Premium"
+            elif "mid-range" in sl or "mid range" in sl:
+                price_position = "Mid-range"
+            elif "budget" in sl or "low-cost" in sl:
+                price_position = "Budget"
+            else:
+                price_position = "Mid-range"
+
+    shared_data["price_position"] = price_position
+    print(f"  💰 Price position ({company}): {price_position}")
+
+    # Per-competitor price tier for positioning matrix (High / Mid / Low)
+    per_competitor_prices: dict[str, str] = {}
+    for comp in shared_data["competitor_list"]:
+        name = (comp.get("name") or "").strip()
+        if not name:
+            continue
+        comp_section = re.search(
+            rf"###\s*{re.escape(name)}.*?(?=###|\Z)",
+            pricing_text,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if not comp_section:
+            comp_section = re.search(
+                rf"##\s*{re.escape(name)}.*?(?=(?:###|##)\s|\Z)",
+                pricing_text,
+                re.DOTALL | re.IGNORECASE,
+            )
+        if comp_section:
+            text = comp_section.group(0)
+            tl = text.lower()
+            if "€€€" in text or "premium" in tl:
+                per_competitor_prices[name] = "High"
+            elif ("€€" in text and "€€€" not in text) or "mid-range" in tl or "mid range" in tl:
+                per_competitor_prices[name] = "Mid"
+            elif ("€" in text and "€€" not in text) or "budget" in tl:
+                per_competitor_prices[name] = "Low"
+            else:
+                per_competitor_prices[name] = "Mid"
+        else:
+            per_competitor_prices[name] = "Mid"
+    shared_data["per_competitor_prices"] = per_competitor_prices
 
     # ── Step 4: Local SEO & Content ────────────────────────────────────────────────
     print("\n🔍 Step 4/7: Local SEO & Content Strategy")
