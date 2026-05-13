@@ -741,6 +741,10 @@ All data points are cross-verified from multiple sources. Information that could
         def _advanced_llm_ok(s: str) -> bool:
             return bool(s) and "*not available*" not in s.lower() and len(s) > 100
 
+        recommendations_note = (
+            "*Recommendations synthesized from available research — validate against your own priorities.*"
+        )
+
         research_summary = "\n\n---\n\n".join(
             p
             for p in (
