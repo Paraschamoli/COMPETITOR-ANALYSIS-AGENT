@@ -4,73 +4,97 @@ A production-grade AI system for comprehensive competitive intelligence analysis
 
 ## Features
 
-- **Universal Business Support**: Works for ANY business type (restaurants, cafes, shops, services, etc.)
-- **7-Step Sequential Analysis**: Comprehensive coverage of all competitive dimensions
-- **Data-Driven Reports**: Uses verified data sources, no invented information
-- **Multi-Platform Intelligence**: Google Maps, Yelp, TripAdvisor, social media platforms
-- **Advanced Sections**: Customer personas, risk assessment, financial benchmarks (optional)
-- **Google Maps Scraper**: Docker-based integration for accurate review data (optional)
+- **Universal business support**: Works for many business types (restaurants, cafes, shops, services, and more).
+- **7-step sequential analysis**: Discovery → product → pricing → SEO → social → news → customer feedback.
+- **Data-driven reports**: Agents are instructed to use tools (search, scrape) and to mark unverified data clearly.
+- **Multi-platform intelligence**: Web search, Firecrawl, Google Maps (optional Docker scraper), review-oriented research.
+- **Advanced sections**: Personas, risk, recommendations, financial benchmarks, and more (optional; see [Advanced sections](#optional-advanced-sections)).
+- **Google Maps scraper**: Docker-based integration for richer Maps-style data (optional).
 
-## Quick Start
+## Quick start
 
 ### Prerequisites
 
-- Python 3.8+
-- OpenRouter API key
-- Optional: Docker (for Google Maps Scraper)
-- Optional: Agent Reach CLI tools (for enhanced platform access)
+- **Python 3.9+** (see `pyproject.toml`; 3.10+ recommended)
+- **OpenRouter** API key ([openrouter.ai](https://openrouter.ai/keys))
+- **Firecrawl** API key (agents use Firecrawl for structured page extraction)
+- **Tavily** and **Serper** API keys (default tool stack registers both search providers)
+- Optional: **Docker** (for Google Maps scraper)
+- Optional: **YouTube Data API** key and `google-api-python-client` (channel stats after the social step)
+- Optional: **Agent Reach** CLI ([install guide](https://raw.githubusercontent.com/Panniantong/agent-reach/main/docs/install.md)) — detection on Windows uses `where agent-reach`
 
 ### Installation
 
-1. Clone the repository:
+1. Clone the repository and enter the project directory:
+
 ```bash
 git clone <repository-url>
 cd "COMPETITOR ANALYSIS AGENT"
 ```
 
-2. Install dependencies:
+2. Create a virtual environment (recommended), then install dependencies using **either** [uv](https://github.com/astral-sh/uv) **or** pip:
+
 ```bash
-pip install -r requirements.txt
+# Option A — uv (uses uv.lock when present)
+uv sync
+
+# Option B — pip editable install from pyproject.toml
+pip install -e .
 ```
 
-3. Set up environment variables:
+There is **no** `requirements.txt`; dependency versions are defined in `pyproject.toml` (and locked in `uv.lock` if you use uv).
+
+3. Environment file — copy the template and fill in keys:
+
 ```bash
-cp .env.example .env
-# Edit .env with your API keys
+# Windows (PowerShell)
+Copy-Item env.example .env
+
+# macOS / Linux
+cp env.example .env
 ```
 
-### Required Environment Variables
+Edit `.env` with your API keys. The committed template is `env.example` (not `.env.example`).
 
-Create a `.env` file with:
+### Environment variables
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `OPENROUTER_API_KEY` | Yes | LLM calls via OpenRouter (Agno `OpenRouter` model) |
+| `FIRECRAWL_API_KEY` | Yes for default tools | Website crawl / markdown extraction |
+| `TAVILY_API_KEY` | Yes for default tools | Tavily search (`TavilyTools`) |
+| `SERPER_API_KEY` | Yes for default tools | Google search (`SerperTools`) |
+| `ENABLE_GOOGLE_MAPS_SCRAPER` | No | Set to `true` to enable Docker Google Maps scraper (requires Docker) |
+| `YOUTUBE_API_KEY` | No | YouTube channel stats (also needs `google-api-python-client`) |
+| `ENABLE_ADVANCED_SECTIONS` | No | Default `true` in code if unset; set `false` to skip the extra agent pass |
+| `ENABLE_VISUAL_CHARTS` | No | ASCII positioning matrix and related visuals in the report |
+| `STRICT_VERIFICATION` | No | Intended for strict data-handling behavior in agents (see `agent/config.py`) |
+
+Example `.env` skeleton:
 
 ```bash
-# Required
-OPENROUTER_API_KEY=sk-or-v1-your-openrouter-api-key
-TAVILY_API_KEY=tvly-your-tavily-api-key
-SERPER_API_KEY=your-serper-api-key
-FIRECRAWL_API_KEY=fc-your-firecrawl-api-key
+OPENROUTER_API_KEY=sk-or-v1-...
+FIRECRAWL_API_KEY=fc-...
+TAVILY_API_KEY=tvly-...
+SERPER_API_KEY=...
 
-# Optional (but recommended)
+# Optional
+ENABLE_GOOGLE_MAPS_SCRAPER=false
+YOUTUBE_API_KEY=
 ENABLE_ADVANCED_SECTIONS=true
 ENABLE_VISUAL_CHARTS=true
 STRICT_VERIFICATION=true
-
-# Optional - Google Maps Scraper (requires Docker)
-ENABLE_GOOGLE_MAPS_SCRAPER=true
-
-# Optional - YouTube API
-YOUTUBE_API_KEY=your-youtube-api-key
 ```
 
 ## Usage
 
-### Basic Analysis
+### Basic analysis
 
 ```bash
 python main_modular.py --company "Foodhallen" --domain "food hall" --location "Amsterdam"
 ```
 
-### With Initial Competitors
+### With initial competitors
 
 ```bash
 python main_modular.py --company "Cafe de Klos" \
@@ -79,7 +103,7 @@ python main_modular.py --company "Cafe de Klos" \
                        --initial_competitors "De Bolhoed, Cafe de Paris"
 ```
 
-### Custom Output Path
+### Custom output path
 
 ```bash
 python main_modular.py --company "Restaurant De Kas" \
@@ -88,201 +112,156 @@ python main_modular.py --company "Restaurant De Kas" \
                        --output "./reports/analysis.md"
 ```
 
-## Command Line Options
+### Skip YouTube API calls
+
+```bash
+python main_modular.py --company "Foodhallen" --domain "restaurant" --location "Amsterdam" --skip-youtube
+```
+
+## Command-line options
 
 | Parameter | Required | Description | Example |
 |-----------|----------|-------------|---------|
 | `--company` | Yes | Target business name | `"Foodhallen"` |
-| `--domain` | Yes | Business type/category | `"cafe"`, `"restaurant"`, `"shop"`, `"service"` |
-| `--location` | Yes | Geographic location | `"Amsterdam"`, `"New York"` |
-| `--initial_competitors` | No | Starting competitors | `"Competitor1, Competitor2"` |
-| `--output` | No | Custom output file path | `"./reports/analysis.md"` |
+| `--domain` | Yes | Business type or category | `"cafe"`, `"restaurant"`, `"gym"` |
+| `--location` | Yes | Geographic focus | `"Amsterdam"` |
+| `--initial_competitors` | No | Seed competitor names (comma-separated) | `"A, B"` (default label: `Auto-discovered`) |
+| `--output` | No | Full path to the output Markdown file | `"./reports/out.md"` |
+| `--skip-youtube` | No | Do not call YouTube Data API after the social step | flag |
 
-## Supported Business Types
+## Supported business types
 
-The agent works with ANY business type:
+The prompts are written to adapt to the domain you pass in (`--domain`): food and beverage, retail, services, entertainment, professional services, and others. The pipeline does not hard-code “restaurant only” behavior in the orchestrator.
 
-- **Food & Beverage**: Restaurants, cafes, bars, food halls
-- **Retail**: Shops, boutiques, stores, markets
-- **Services**: Gyms, salons, professional services, healthcare
-- **Entertainment**: Venues, theaters, clubs
-- **Real Estate**: Agencies, property management
-- **Professional**: Consulting, legal, financial services
-- And more...
+## Analysis pipeline
 
-## Analysis Pipeline
+### Step 1: Competitor discovery
 
-### Step 1: Competitor Discovery
-- Auto-discovers 6-10 competitors using multiple sources
-- Filters out irrelevant competitors (internal vendors, wrong-city venues, low-review competitors)
-- Extracts competitor count for data-driven reporting
+- Discovers **at least six** competitors when possible; uses search/scrape tools and optional Google Maps Docker scraper.
+- Parses a markdown table and regex hints into **`shared_data`** (`competitor_list`, `competitor_count`).
+- If discovery fails or returns too few competitors, runs a **search fallback** (Tavily, then Serper) and may pad with generic placeholders so later steps still run.
 
-### Step 2: Product & Service Analysis
-- Deep-dive into offerings, facilities, operations
-- Verifies accessibility features (doesn't assume)
-- Analyzes all discovered competitors
+### Steps 2–7
 
-### Step 3: Pricing & Business Model
-- Extracts pricing information and business models
-- Analyzes delivery platform presence (Uber Eats, Deliveroo, Thuisbezorgd)
-- Competitive positioning analysis
+2. **Product and service** — offerings and positioning versus the target.  
+3. **Pricing and business model** — price signals, delivery platforms where relevant.  
+4. **Local SEO and content** — visibility and content angles.  
+5. **Social media** — presence and engagement.  
+6. **News and market intelligence** — recent local signals.  
+7. **Customer feedback** — reviews and sentiment-oriented synthesis.
 
-### Step 4: Local SEO & Content Strategy
-- Google Maps ranking and optimization
-- Local citations and business listings
-- Content strategy recommendations
+Each step receives the discovered **competitor name list** so the model is steered to cover the same set.
 
-### Step 5: Social Media Intelligence
-- Platform presence and engagement analysis
-- Enhanced data via Agent Reach (when available)
-- Community engagement assessment
+### Bonus: SWOT and strategy
 
-### Step 6: Local News & Market Intelligence
-- Recent developments and events (3-6 months)
-- Awards, partnerships, business updates
-- Local media coverage analysis
+- Runs after step 7 when `shared_data` has a valid competitor count and list.
+- Uses the **coordinator** model (see [Models](#models-and-openrouter)).
 
-### Step 7: Customer Feedback Analysis
-- Multi-platform review aggregation
-- Sentiment analysis with verified quotes
-- Single source of truth for review counts
+### Optional: advanced sections
 
-### Bonus: SWOT Analysis & Strategic Recommendations
-- Data-driven SWOT analysis using actual competitor count
-- Strategic recommendations based on all research
+When `ENABLE_ADVANCED_SECTIONS` is true, an additional agent generates extended blocks (personas, risk table, recommendations, financial framing, digital ads, UGC, accessibility, seasonal notes, action plan). The final report merges this output into dedicated sections when content is present and passes length checks.
 
-### Optional: Advanced Sections
-When enabled via `ENABLE_ADVANCED_SECTIONS=true`:
-
-1. Customer Personas (data-driven only)
-2. Risk Assessment (with source citations)
-3. Actionable Recommendations
-4. Financial Benchmarks (with source citations)
-5. Digital Ads & Paid Media analysis
-6. UGC & Hashtag Analysis
-7. Accessibility & Inclusivity (verified only)
-8. Seasonal Trends (with source citations)
-9. Next Steps / Action Plan
+**Note:** If advanced blocks appear empty or show “Insufficient data” placeholders, the pipeline may need alignment between how those headings are parsed and how the report inserts them; see `main_modular.py` and `agent/report_generator.py` when debugging.
 
 ## Output
 
-### Report Structure
+### Report structure
 
-Generated reports include:
+Typical sections in order:
 
-1. **Executive Summary** (data-driven with actual metrics)
-2. **Competitive Landscape Overview** (with comparison matrix)
-3. **Product & Feature Analysis**
-4. **Pricing & Business Models**
-5. **SEO & Content Strategy**
-6. **Social Media Intelligence**
-7. **News & Recent Developments**
-8. **Customer Feedback Analysis**
-9. **SWOT Analysis & Strategic Recommendations**
-10. **Advanced Sections** (if enabled)
+1. Executive summary  
+2. Methodology  
+3. Competitive landscape (discovery)  
+4. Product and feature analysis  
+5. Pricing and business models  
+6. SEO and content strategy  
+7. Social media intelligence (optional YouTube subsection)  
+8. News and recent developments  
+9. Customer feedback analysis  
+10. Customer personas, SWOT, risk, recommendations, financial, ads, UGC, accessibility, seasonal, action plan — depending on `ENABLE_ADVANCED_SECTIONS` and available content  
+11. Competitive positioning matrix (when visual charts are enabled)
 
-### File Format
+### File format and naming
 
-- **Format**: Markdown (.md)
-- **Location**: `./output/` directory (auto-created)
-- **Naming**: `competitor_analysis_{company}_{domain}_{timestamp}.md`
-- **Encoding**: UTF-8
+- **Format**: Markdown (UTF-8)  
+- **Default directory**: `./output/` (created if missing)  
+- **Default filename**: `competitor_analysis_{slug}_{YYYYMMDD_HHMM}.md`  
+  where `slug` is derived from `company`, `domain`, and `location` (lowercased, spaces to underscores, max 50 characters).  
+- **`--output`**: Writes exactly to the path you provide.
 
-## Optional Integrations
+## Models and OpenRouter
 
-### Google Maps Scraper (Docker Required)
+Models are **not** read from environment variables in the current code. They are set in **`agent/config.py`**:
 
-For more accurate review data:
+- **`COORDINATOR_MODEL`** — used for SWOT and advanced sections (higher-level synthesis).  
+- **`AGENT_MODEL`** — used for the seven research agents.
 
-1. Install and run Docker Desktop
-2. Set `ENABLE_GOOGLE_MAPS_SCRAPER=true` in `.env`
-3. The scraper provides:
-   - Exact review counts and ratings
-   - 33+ data points per business
-   - Coordinates and business status
-   - 30-second timeout to prevent hanging
+Defaults in the repository point at OpenRouter model IDs (for example Grok for coordination and a GPT-OSS variant for workers). Change those constants to switch models, then rerun the CLI.
 
-### Agent Reach (Enhanced Platform Access)
+## Optional integrations
 
-For direct platform data access:
+### Google Maps scraper (Docker)
 
-1. Install Agent Reach CLI tools
-2. Enhanced data from:
-   - Twitter/X (real tweets, engagement)
-   - Reddit (discussions, sentiment)
-   - GitHub (repository activity)
+1. Install and start Docker.  
+2. Set `ENABLE_GOOGLE_MAPS_SCRAPER=true` in `.env`.  
+3. The app runs `gosom/google-maps-scraper` with a **30-second** timeout and JSON-oriented output.
 
-### Crawl4AI (Alternative Scraper)
+### Agent Reach
 
-Free, open-source alternative to Firecrawl:
-- JavaScript rendering capability
-- Anti-bot evasion
-- No API key required
+Install the Agent Reach CLI for optional deeper platform workflows. Availability is probed at import time on supported setups.
 
-## Configuration Options
+### Crawl4AI
 
-### Environment Variables
+Optional dependency (`crawl4ai`) for async browser-based scraping helpers in `agent/tools.py`. Agents primarily use Firecrawl + search tools unless you extend tooling.
 
-```bash
-# Advanced Features
-ENABLE_ADVANCED_SECTIONS=true     # Generate advanced strategic sections
-ENABLE_VISUAL_CHARTS=true          # ASCII charts in reports
-STRICT_VERIFICATION=true           # Reject unverified data
+## Performance and limits
 
-# Google Maps Scraper
-ENABLE_GOOGLE_MAPS_SCRAPER=true    # Enable Docker-based scraper
-
-# Model Configuration (optional)
-COORDINATOR_MODEL=openai/gpt-4.1
-AGENT_MODEL=openai/gpt-4.1-mini
-```
-
-## Performance
-
-- **Report Size**: 40,000+ characters
-- **Execution Time**: 3-5 minutes
-- **Competitor Coverage**: 6-10 competitors
-- **Data Sources**: 8+ platforms analyzed
-- **Success Rate**: 95%+ with fallbacks
+- **Runtime**: Often on the order of **several minutes**, depending on model latency, tool calls, and network.  
+- **Competitors**: Pipeline targets **six to ten** named competitors; fallback logic enforces a minimum list size for downstream steps.  
+- **Report assembly**: Individual step outputs may be **truncated for the final Markdown merge** (see `clean_cutoff` in `agent/report_generator.py`) so very long agent replies are shortened before section stitching. Total file size still varies with templates, SWOT, advanced text, and charts.
 
 ## Troubleshooting
 
-### Common Issues
+### API and keys
 
-1. **API Key Errors**
-   - Verify OpenRouter API key is valid
-   - Check key format: `sk-or-v1-...`
+- Confirm `OPENROUTER_API_KEY` starts with `sk-or-v1-` (or the format OpenRouter documents).  
+- Ensure Tavily, Serper, and Firecrawl keys match the providers your `agno` tool wrappers expect.
 
-2. **Docker Issues**
-   - Ensure Docker Desktop is running
-   - Check if port 2375 is available
+### Docker
 
-3. **Missing Data**
-   - Some businesses have limited public data
-   - System marks as "Unable to verify" when data unavailable
+- Google Maps scraping requires a working `docker` CLI and image pull on first use.
 
-4. **Timeout Issues**
-   - Google Maps Scraper uses 30-second timeout
-   - Network issues may cause timeouts
+### Windows console encoding
 
-### Debug Mode
+- On some Windows terminals, importing the package can print Unicode status symbols from `agent/config.py`. If you see encoding errors, run with UTF-8 mode, for example:  
+  `set PYTHONIOENCODING=utf-8` (cmd) or `$env:PYTHONIOENCODING='utf-8'` (PowerShell) before `python main_modular.py ...`.
 
-Enable verbose logging:
+### Debug logging
+
 ```bash
+# PowerShell
+$env:PYTHONPATH = "."
+python main_modular.py --company "Test" --domain "restaurant" --location "Amsterdam" 2>&1 | Tee-Object -FilePath debug.log
+```
+
+```bash
+# bash
 export PYTHONPATH=.
 python main_modular.py --company "Test" --domain "restaurant" --location "Amsterdam" 2>&1 | tee debug.log
 ```
 
 ## Examples
 
-### Restaurant Analysis
+### Restaurant
+
 ```bash
 python main_modular.py --company "Restaurant De Kas" \
                        --domain "restaurant" \
                        --location "Amsterdam"
 ```
 
-### Cafe Analysis
+### Cafe with seeds
+
 ```bash
 python main_modular.py --company "Cafe de Klos" \
                        --domain "cafe" \
@@ -290,7 +269,8 @@ python main_modular.py --company "Cafe de Klos" \
                        --initial_competitors "De Bolhoed, Cafe de Paris"
 ```
 
-### Service Business Analysis
+### Gym / service business
+
 ```bash
 python main_modular.py --company "Fitness First" \
                        --domain "gym" \
@@ -299,81 +279,57 @@ python main_modular.py --company "Fitness First" \
 
 ## Architecture
 
-### System Components
+### Components
 
-- **Core**: Sequential 7-step pipeline with shared_data
-- **Agents**: 9 specialized agents for different analysis dimensions
-- **Tools**: Search engines, web scrapers, platform integrations
-- **Models**: OpenRouter GPT-4.1 (coordinator) and GPT-4.1-mini (agents)
+- **Entrypoint**: `main_modular.py` — CLI, sequential steps, `shared_data`, fallbacks, report save.  
+- **Agents**: `agent/agents/*.py` — Agno `Agent` factories (discovery, product, pricing, SEO, social, news, feedback, SWOT, advanced).  
+- **Tools**: `agent/tools.py` — Tavily, Serper, Firecrawl, optional Crawl4AI, YouTube, Docker Maps helper.  
+- **Models**: `agent/models.py` — OpenRouter-backed models for coordinator vs worker roles.  
+- **Report**: `agent/report_generator.py` — Markdown synthesis, tables, optional matrix.
 
-### Data Flow
+### Data flow
 
 ```
-User Input
-    |
-    v
-Competitor Discovery (extract competitor_count)
-    |
-    v
-Product Analysis
-    |
-    v
-Pricing Analysis
-    |
-    v
-SEO Analysis
-    |
-    v
-Social Media Analysis
-    |
-    v
-News Analysis
-    |
-    v
-Customer Feedback (extract google_reviews)
-    |
-    v
-SWOT Analysis (uses competitor_count)
-    |
-    v
-Advanced Sections (data-only)
-    |
-    v
-Report Generation (uses shared_data)
+CLI (company, domain, location)
+    → Discovery → shared_data (competitor_count, competitor_list)
+    → Product → Pricing → SEO → Social → News → Feedback
+    → shared_data (price_position, google_reviews, …)
+    → SWOT (coordinator)
+    → Advanced sections (optional)
+    → synthesize_final_report → output/*.md
 ```
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+1. Fork the repository  
+2. Create a feature branch  
+3. Make focused changes  
+4. Add or update tests when behavior changes  
+5. Open a pull request  
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License — see the `LICENSE` file if present in your fork.
 
 ## Support
 
-- **Documentation**: See `specs.md` for comprehensive technical specifications
-- **Issues**: Report bugs via GitHub Issues
-- **Discussions**: Use GitHub Discussions for questions
+- **Technical depth**: `specs.md` (may differ slightly from the live code; prefer this README and source for behavior).  
+- **Issues**: Use your host’s issue tracker (for example GitHub Issues).
 
 ## Changelog
 
+### README refresh (May 2026)
+
+- Documented `pyproject.toml` / `uv` installation (removed obsolete `requirements.txt` reference).  
+- Documented `env.example`, required API keys, and `--skip-youtube`.  
+- Aligned model documentation with `agent/config.py` (constants, not env vars).  
+- Clarified output filename pattern, truncation behavior, and Windows notes.
+
 ### Version 1.0.0 (April 13, 2026)
-- Initial release with 7-step sequential analysis
-- Universal business type support
-- Google Maps Scraper integration (opt-in)
-- Advanced sections with data-only requirements
-- Full competitor coverage enforcement
-- Data-driven Executive Summary
-- Accessibility verification requirements
-- Quote verification (no "derived from analysis")
-- Source citation requirements for seasonal/financial data
+
+- Initial public-style release: seven-step pipeline, optional Maps scraper and advanced sections, SWOT synthesis, shared competitor state.
 
 ---
 
-**Generated by Competitor Analysis Agent Team**  
-*Last updated: April 13, 2026*
+**Competitor Analysis Agent**  
+*README last updated: May 13, 2026*
