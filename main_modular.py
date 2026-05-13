@@ -435,7 +435,6 @@ def main():
     )
     
     # Extract Google review counts and ratings from feedback output
-    import re
     import json
     feedback_text = step_results['feedback']
     
