@@ -12,6 +12,20 @@ from agno.tools.serper import SerperTools
 from agno.tools.firecrawl import FirecrawlTools
 from .config import CRAWL4AI_AVAILABLE, YOUTUBE_AVAILABLE, YOUTUBE_API_KEY, GOOGLE_MAPS_SCRAPER_AVAILABLE
 
+# Re-export search tool classes so callers can `from agent.tools import TavilyTools, SerperTools`.
+__all__ = [
+    "TavilyTools",
+    "SerperTools",
+    "FirecrawlTools",
+    "search_tools",
+    "crawl_tools",
+    "all_tools",
+    "crawl4ai_scrape",
+    "get_youtube_channel_stats",
+    "scrape_google_maps",
+    "google_maps_scraper_tool",
+]
+
 
 def search_tools():
     """Serper only - avoiding Tavily rate limits"""

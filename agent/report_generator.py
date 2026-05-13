@@ -146,6 +146,27 @@ def clean_markdown(text: str) -> str:
     return cleaned
 
 
+def get_advanced_section(
+    advanced_sections: Optional[Dict],
+    stable_key: str,
+    legacy_keys: Optional[List[str]] = None
+) -> str:
+    """
+    Fetch an advanced section by stable key with backward-compatible fallbacks.
+    """
+    if not advanced_sections:
+        return ""
+
+    if stable_key in advanced_sections:
+        return advanced_sections.get(stable_key, "")
+
+    for key in legacy_keys or []:
+        if key in advanced_sections:
+            return advanced_sections.get(key, "")
+
+    return ""
+
+
 def generate_sentiment_chart(positive_pct: float, neutral_pct: float, negative_pct: float) -> str:
     """
     Generate a text-based sentiment bar chart.
@@ -319,20 +340,6 @@ def add_verification_column_to_tables(text: str) -> str:
     return '\n'.join(result)
 
 
-
-    # Persona 3: Value-focused
-    personas.append(f"""
-**Persona 3: The Value Seeker**
-- **Demographics:** Age 20-35, income €30K+, budget-conscious
-- **Behavior:** Visits 1-2 times per month, spends €15-20, looks for deals
-- **Motivations:** Affordability, portion size, promotions
-- **Pain Points:** Price increases, lack of discounts
-- **Quote:** "Good value when on promotion" - Derived from review analysis
-""")
-
-    return '\n'.join(personas)
-
-
 def generate_risk_assessment() -> str:
     """
     Generate risk assessment table with 5 external threats.
@@ -491,31 +498,32 @@ def synthesize_final_report(
     from .config import ENABLE_ADVANCED_SECTIONS, ENABLE_VISUAL_CHARTS
     
     # Override review counts using shared_data if available
-    if shared_data and 'google_reviews' in shared_data:
-        google_reviews = shared_data['google_reviews']
+    if shared_data and shared_data.get("google_reviews"):
+        google_reviews = shared_data["google_reviews"]
         for competitor_name, review_count in google_reviews.items():
+            count_val = review_count.get("count") if isinstance(review_count, dict) else review_count
+            if count_val is None:
+                continue
+            try:
+                count_num = int(float(count_val))
+            except (TypeError, ValueError):
+                continue
+
             for section in step_results:
                 if isinstance(step_results[section], str):
-                    # Replace review counts for this competitor with the stored value
                     step_results[section] = re.sub(
-                        rf'{competitor_name}.*?(\d+)\s+reviews',
-                        f'{competitor_name} {review_count} reviews',
+                        rf"{re.escape(competitor_name)}.*?(\d+)\s+reviews",
+                        f"{competitor_name} {count_num} reviews",
                         step_results[section],
-                        flags=re.IGNORECASE
+                        flags=re.IGNORECASE,
                     )
-                    # Also replace standalone review counts if they appear near competitor name
                     step_results[section] = re.sub(
-                        rf'(\d+)\s+reviews.*?{competitor_name}',
-                        f'{review_count} reviews ({competitor_name})',
+                        rf"(\d+)\s+reviews.*?{re.escape(competitor_name)}",
+                        f"{count_num} reviews ({competitor_name})",
                         step_results[section],
-                        flags=re.IGNORECASE
+                        flags=re.IGNORECASE,
                     )
-    
-    # Apply clean_cutoff to all agent outputs to prevent truncation
-    for key in step_results:
-        if isinstance(step_results[key], str) and len(step_results[key]) > 3000:
-            step_results[key] = clean_cutoff(step_results[key], max_chars=3000)
-    
+
     now = datetime.now().strftime("%B %d, %Y")
     
     # Build executive summary from actual data
@@ -679,47 +687,83 @@ All data points are cross-verified from multiple sources. Information that could
     # Add advanced sections if enabled
     if ENABLE_ADVANCED_SECTIONS:
         # Customer Personas - only use actual research data
-        personas_content = advanced_sections.get('personas', '') if advanced_sections else ''
+        personas_content = get_advanced_section(
+            advanced_sections,
+            'personas',
+            legacy_keys=['1._customer_personas', 'customer_personas']
+        )
         if not personas_content or '*not available*' in personas_content.lower() or len(personas_content) < 100:
             personas_content = "*Insufficient data - Customer personas could not be generated from available research data.*"
         
         # Risk Assessment - only use actual research data
-        risk_content = advanced_sections.get('risk', '') if advanced_sections else ''
+        risk_content = get_advanced_section(
+            advanced_sections,
+            'risk',
+            legacy_keys=['2._risk_assessment', 'risk_assessment']
+        )
         if not risk_content or '*not available*' in risk_content.lower() or len(risk_content) < 100:
             risk_content = "*Insufficient data - Risk assessment could not be generated from available research data.*"
         
         # Actionable Recommendations - only use actual research data
-        recommendations_content = advanced_sections.get('recommendations', '') if advanced_sections else ''
+        recommendations_content = get_advanced_section(
+            advanced_sections,
+            'recommendations',
+            legacy_keys=['3._actionable_recommendations', 'actionable_recommendations']
+        )
         if not recommendations_content or '*not available*' in recommendations_content.lower() or len(recommendations_content) < 100:
             recommendations_content = "*Insufficient data - Actionable recommendations could not be generated from available research data.*"
         
         # Financial Benchmarks - only use actual research data
-        financial_content = advanced_sections.get('financial', '') if advanced_sections else ''
+        financial_content = get_advanced_section(
+            advanced_sections,
+            'financial',
+            legacy_keys=['4._financial_benchmarks', 'financial_benchmarks']
+        )
         if not financial_content or '*not available*' in financial_content.lower() or len(financial_content) < 100:
             financial_content = "*Insufficient data - Financial benchmarks could not be generated from available research data. Public financial information not available.*"
         
         # Digital Ads - only use actual research data
-        digital_ads_content = advanced_sections.get('digital_ads', '') if advanced_sections else ''
+        digital_ads_content = get_advanced_section(
+            advanced_sections,
+            'digital_ads',
+            legacy_keys=['5._digital_ads_paid_media', 'digital_ads_paid_media']
+        )
         if not digital_ads_content or '*not available*' in digital_ads_content.lower() or len(digital_ads_content) < 100:
             digital_ads_content = "*Insufficient data - Digital ads analysis could not be generated from available research data.*"
         
         # UGC & Hashtags - only use actual research data
-        ugc_content = advanced_sections.get('ugc', '') if advanced_sections else ''
+        ugc_content = get_advanced_section(
+            advanced_sections,
+            'ugc',
+            legacy_keys=['6._ugc_hashtag_analysis', 'ugc_hashtag_analysis']
+        )
         if not ugc_content or '*not available*' in ugc_content.lower() or len(ugc_content) < 100:
             ugc_content = "*Insufficient data - UGC and hashtag analysis could not be generated from available research data.*"
         
         # Accessibility - only use actual research data
-        accessibility_content = advanced_sections.get('accessibility', '') if advanced_sections else ''
+        accessibility_content = get_advanced_section(
+            advanced_sections,
+            'accessibility',
+            legacy_keys=['7._accessibility_inclusivity', 'accessibility_inclusivity']
+        )
         if not accessibility_content or '*not available*' in accessibility_content.lower() or len(accessibility_content) < 100:
             accessibility_content = "*Insufficient data - Accessibility analysis could not be generated from available research data. Verification required from official sources.*"
         
         # Seasonal Trends - only use actual research data
-        seasonal_content = advanced_sections.get('seasonal', '') if advanced_sections else ''
+        seasonal_content = get_advanced_section(
+            advanced_sections,
+            'seasonal',
+            legacy_keys=['8._seasonal_trends', 'seasonal_trends']
+        )
         if not seasonal_content or '*not available*' in seasonal_content.lower() or len(seasonal_content) < 100:
             seasonal_content = "*Insufficient data - Seasonal trends could not be generated from available research data. Industry reports or local tourism data required.*"
         
         # Action Plan - only use actual research data
-        action_plan_content = advanced_sections.get('action_plan', '') if advanced_sections else ''
+        action_plan_content = get_advanced_section(
+            advanced_sections,
+            'action_plan',
+            legacy_keys=['9._next_steps_action_plan', 'next_steps_action_plan']
+        )
         if not action_plan_content or '*not available*' in action_plan_content.lower() or len(action_plan_content) < 100:
             action_plan_content = "*Insufficient data - Action plan could not be generated from available research data.*"
         

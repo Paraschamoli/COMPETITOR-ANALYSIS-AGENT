@@ -8,6 +8,7 @@ Usage:
 """
 
 import argparse
+import re
 from agent.config import (
     COORDINATOR_MODEL, AGENT_MODEL, CRAWL4AI_AVAILABLE,
     AGENT_REACH_AVAILABLE, YOUTUBE_AVAILABLE, ENABLE_ADVANCED_SECTIONS, GOOGLE_MAPS_SCRAPER_AVAILABLE
@@ -22,7 +23,97 @@ from agent.agents.customer_feedback_agent import customer_feedback_agent
 from agent.agents.swot_synthesis_agent import swot_synthesis_agent
 from agent.agents.advanced_sections_agent import advanced_sections_agent
 from agent.tools import get_youtube_channel_stats
-from agent.report_generator import synthesize_final_report, save_report
+from agent.report_generator import synthesize_final_report, save_report, clean_cutoff
+
+try:
+    from agent.tools import TavilyTools, SerperTools
+
+    SEARCH_TOOLS_AVAILABLE = True
+except ImportError:
+    TavilyTools = None  # type: ignore[misc, assignment]
+    SerperTools = None  # type: ignore[misc, assignment]
+    SEARCH_TOOLS_AVAILABLE = False
+
+# Max chars passed into downstream agents (sentence-aware); full step_results stay intact for the report.
+SWOT_CONTEXT_SECTION_MAX = 4000
+ADVANCED_CONTEXT_SECTION_MAX = 2000
+
+# Substrings (lowercase) matched against cleaned LLM headers → keys used by report_generator.py
+SECTION_KEY_MAP = {
+    "customer personas": "personas",
+    "customer persona": "personas",
+    "risk assessment": "risk",
+    "actionable recommendations": "recommendations",
+    "financial benchmarks": "financial",
+    "digital ads": "digital_ads",
+    "ugc": "ugc",
+    "hashtag": "ugc",
+    "accessibility": "accessibility",
+    "seasonal": "seasonal",
+    "next steps": "action_plan",
+    "action plan": "action_plan",
+}
+
+
+def clean_advanced_section_header(header: str) -> str:
+    """Strip markdown hashes, then leading digits, dots, and whitespace; lowercase."""
+    s = re.sub(r"^#+\s*", "", header.strip())
+    s = s.lstrip("0123456789. \t")
+    return s.lower()
+
+
+def map_advanced_header_to_canonical_key(header: str) -> str:
+    """
+    Map a section header to a short canonical key using SECTION_KEY_MAP substring rules.
+    Unknown sections fall back to a snake_case slug of the cleaned header.
+    """
+    cleaned = clean_advanced_section_header(header)
+    for phrase, canonical in SECTION_KEY_MAP.items():
+        if phrase in cleaned:
+            return canonical
+    return re.sub(r"[^a-z0-9]+", "_", cleaned).strip("_") or "misc"
+
+
+def _hit_to_competitor_row(title: str, company: str) -> dict | None:
+    name = (title or "").strip()
+    if not name or name.strip().casefold() == company.strip().casefold():
+        return None
+    return {
+        "name": name,
+        "address": "",
+        "rating": "",
+        "review_count": "",
+    }
+
+
+def _collect_competitors_from_search_query(query: str, company: str) -> list[dict]:
+    """Run Tavily then Serper for one query; return competitor dict rows from result titles."""
+    rows: list[dict] = []
+    if not SEARCH_TOOLS_AVAILABLE or TavilyTools is None or SerperTools is None:
+        return rows
+    try:
+        tavily_results = TavilyTools().search(query)
+        if tavily_results and hasattr(tavily_results, "results"):
+            for result in tavily_results.results[:5]:
+                if hasattr(result, "title") and result.title:
+                    row = _hit_to_competitor_row(result.title, company)
+                    if row:
+                        rows.append(row)
+            if rows:
+                return rows
+    except Exception:
+        pass
+    try:
+        serper_results = SerperTools().search(query)
+        if serper_results and hasattr(serper_results, "organic"):
+            for result in serper_results.organic[:5]:
+                if hasattr(result, "title") and result.title:
+                    row = _hit_to_competitor_row(result.title, company)
+                    if row:
+                        rows.append(row)
+    except Exception:
+        pass
+    return rows
 
 
 def parse_args():
@@ -66,11 +157,25 @@ def banner(args):
     print("\n")
 
 
-def run_step(step_name: str, agent, prompt: str) -> str:
-    """Run a single agent step with error handling."""
+def run_step(
+    step_name: str,
+    agent,
+    prompt: str,
+    *,
+    company: str,
+    domain: str,
+    location: str,
+) -> str:
+    """Run a single agent step with error handling.
+
+    agno resolves ``{company}``, ``{domain}``, ``{location}`` in instructions from ``session_state``.
+    """
     print(f"  ⏳ {step_name}...")
     try:
-        result = agent.run(prompt)
+        result = agent.run(
+            prompt,
+            session_state={"company": company, "domain": domain, "location": location},
+        )
         content = ""
         if hasattr(result, "content"):
             content = result.content
@@ -111,11 +216,13 @@ def main():
         "Local Competitor Discovery",
         competitor_discovery_agent(),
         f"{context}\n\nDiscover and profile all local competitors for {company} in the {domain} category in {location}."
-        f" Start with these known competitors: {competitors_seed}, then find more local businesses."
+        f" Start with these known competitors: {competitors_seed}, then find more local businesses.",
+        company=company,
+        domain=domain,
+        location=location,
     )
     
     # Extract competitor count using regex from discovery output
-    import re
     count_match = re.search(r"(\d+)\s*(?:competitors|key players)", step_results['discovery'], re.IGNORECASE)
     
     # Parse competitor data from table rows for competitor_list
@@ -149,83 +256,78 @@ def main():
     print(f"  📊 Discovered {shared_data['competitor_count']} competitors (excluding {company})")
     
     # Check if discovery failed or has insufficient competitors, then use deterministic fallback
-    if 'Error:' in step_results['discovery'] or shared_data['competitor_count'] < 6:
-        print(f"  🔄 Discovery failed or insufficient competitors. Running deterministic fallback...")
-        
-        # Import search tools directly
-        from agent.tools import TavilyTools, SerperTools
-        
-        # Use search_tools() directly to run fallback queries
-        search_queries = [
-            f"{domain} near {location}",
-            f"best {domain} in {location}",
-            f"top {domain} {location}"
-        ]
-        
-        fallback_competitors = []
-        for query in search_queries:
-            print(f"  🔍 Searching: {query}")
-            try:
-                # Try Tavily first, then Serper
-                tavily_results = TavilyTools().search(query)
-                if tavily_results and hasattr(tavily_results, 'results'):
-                    for result in tavily_results.results[:3]:  # Top 3 results per query
-                        if hasattr(result, 'title') and result.title:
-                            competitor = {
-                                'name': result.title,
-                                'address': getattr(result, 'address', ''),
-                                'rating': getattr(result, 'rating', ''),
-                                'review_count': getattr(result, 'reviews', '')
-                            }
-                            if competitor['name'] and competitor['name'] != company:
-                                fallback_competitors.append(competitor)
-                else:
-                    # Fallback to Serper
-                    serper_results = SerperTools().search(query)
-                    if serper_results and hasattr(serper_results, 'organic'):
-                        for result in serper_results.organic[:3]:  # Top 3 results per query
-                            if hasattr(result, 'title') and result.title:
-                                competitor = {
-                                    'name': result.title,
-                                    'address': getattr(result, 'address', ''),
-                                    'rating': getattr(result, 'rating', ''),
-                                    'review_count': getattr(result, 'reviews', '')
-                                }
-                                if competitor['name'] and competitor['name'] != company:
-                                    fallback_competitors.append(competitor)
-            except Exception as e:
-                print(f"  ⚠️  Search query failed: {query}")
-                continue
-        
-        # Deduplicate competitors by name
-        unique_competitors = []
-        seen_names = set()
-        for comp in fallback_competitors:
-            if comp['name'] not in seen_names:
-                unique_competitors.append(comp)
-                seen_names.add(comp['name'])
-        
-        # Ensure at least 6 competitors
-        if len(unique_competitors) < 6:
-            print(f"  ⚠️  Fallback found only {len(unique_competitors)} competitors. Adding generic entries to reach minimum.")
-            # Add generic entries if needed
-            for i in range(len(unique_competitors), 6):
-                unique_competitors.append({
-                    'name': f'Local Competitor {i+1}',
-                    'address': f'{location} Area',
-                    'rating': 'N/A',
-                    'review_count': 'N/A'
-                })
-        
-        # Update shared_data with fallback results
-        shared_data['competitor_list'] = unique_competitors[:6]  # Limit to 6
-        shared_data['competitor_count'] = len(shared_data['competitor_list'])
-        print(f"  📊 Fallback discovered {shared_data['competitor_count']} competitors (excluding {company})")
+    if "Error:" in step_results["discovery"] or shared_data["competitor_count"] < 6:
+        print("  🔄 Discovery failed or insufficient competitors. Running deterministic fallback...")
+
+        if not SEARCH_TOOLS_AVAILABLE:
+            print("  ⚠️  Search tools (Tavily/Serper) not available — cannot run web fallback.")
+            shared_data["competitor_list"] = competitors
+            shared_data["competitor_count"] = len(competitors)
+            if len(competitors) < 6:
+                print(
+                    f"  ⚠️  Only {len(competitors)} real competitors found. Report will cover available competitors only."
+                )
+        else:
+            # Seed with any real rows parsed from discovery before enriching via search
+            fallback_competitors: list[dict] = [dict(c) for c in competitors]
+            search_queries = [
+                f"{domain} near {location}",
+                f"best {domain} in {location}",
+                f"top {domain} {location}",
+            ]
+            for query in search_queries:
+                print(f"  🔍 Searching: {query}")
+                try:
+                    fallback_competitors.extend(_collect_competitors_from_search_query(query, company))
+                except Exception:
+                    print(f"  ⚠️  Search query failed: {query}")
+                    continue
+
+            unique_competitors: list[dict] = []
+            seen_names: set[str] = set()
+            for comp in fallback_competitors:
+                n = comp.get("name", "").strip()
+                if n and n not in seen_names:
+                    seen_names.add(n)
+                    unique_competitors.append(comp)
+
+            if len(unique_competitors) < 6:
+                second_pass_queries = [
+                    f"'{domain}' venue {location} site:google.com/maps",
+                    f"top rated {domain} {location} tripadvisor",
+                    f"{domain} {location} recommended",
+                ]
+                for query in second_pass_queries:
+                    print(f"  🔍 Second-pass search: {query}")
+                    try:
+                        for row in _collect_competitors_from_search_query(query, company):
+                            n = row.get("name", "").strip()
+                            if n and n not in seen_names:
+                                seen_names.add(n)
+                                unique_competitors.append(row)
+                    except Exception:
+                        print(f"  ⚠️  Second-pass query failed: {query}")
+                        continue
+
+            if len(unique_competitors) < 6:
+                print(
+                    f"  ⚠️  Only {len(unique_competitors)} real competitors found. Report will cover available competitors only."
+                )
+
+            shared_data["competitor_list"] = unique_competitors
+            shared_data["competitor_count"] = len(unique_competitors)
+            print(f"  📊 Fallback enriched list: {shared_data['competitor_count']} competitors (real names only)")
     
     # Build structured competitor list from shared_data for explicit injection into prompts
-    competitor_names = [comp['name'] for comp in shared_data['competitor_list'] if comp.get('name')]
+    competitor_names = [comp["name"] for comp in shared_data["competitor_list"] if comp.get("name")]
     competitor_list_str = "\n".join(f"- {name}" for name in competitor_names)
-    competitor_prompt_addition = f"\n\nDiscovered competitors (MUST analyze every single one):\n{competitor_list_str}"
+    if competitor_names:
+        competitor_prompt_addition = (
+            f"\n\nDiscovered competitors (analyze every business listed — there are {len(competitor_names)}):\n"
+            f"{competitor_list_str}"
+        )
+    else:
+        competitor_prompt_addition = "\n\nNo structured competitor list was extracted; infer competitors from the context and search results."
 
     # ── Step 2: Product & Service Analysis ──────────────────────────────────────
     print("\n🔬 Step 2/7: Product & Service Analysis")
@@ -233,7 +335,10 @@ def main():
         "Product & Service Analysis",
         product_analysis_agent(),
         f"{context}{competitor_prompt_addition}\n\n"
-        f"Now do deep product/service analysis for each competitor vs {company} in {location}."
+        f"Now do deep product/service analysis for each competitor vs {company} in {location}.",
+        company=company,
+        domain=domain,
+        location=location,
     )
 
     # ── Step 3: Pricing & Business Model ──────────────────────────────────────
@@ -242,7 +347,10 @@ def main():
         "Pricing Analysis",
         pricing_business_agent(),
         f"{context}{competitor_prompt_addition}\n\n"
-        f"Analyze pricing and business model for {company} and all discovered local competitors in {location}."
+        f"Analyze pricing and business model for {company} and all discovered local competitors in {location}.",
+        company=company,
+        domain=domain,
+        location=location,
     )
     
     # Extract price position from pricing output
@@ -271,7 +379,10 @@ def main():
         "Local SEO Analysis",
         seo_content_agent(),
         f"{context}{competitor_prompt_addition}\n\n"
-        f"Analyze local SEO presence and content strategy for {company} and all competitors in {location}."
+        f"Analyze local SEO presence and content strategy for {company} and all competitors in {location}.",
+        company=company,
+        domain=domain,
+        location=location,
     )
 
     # ── Step 5: Social Media Intelligence ────────────────────────────────────────
@@ -281,7 +392,10 @@ def main():
         social_media_agent(),
         f"{context}{competitor_prompt_addition}\n\n"
         f"Analyze social media presence for {company} and all local competitors in {location}."
-        f" Focus on local platforms and community engagement."
+        f" Focus on local platforms and community engagement.",
+        company=company,
+        domain=domain,
+        location=location,
     )
     
     # YouTube API supplement (if configured)
@@ -302,7 +416,10 @@ def main():
         news_intelligence_agent(),
         f"{context}{competitor_prompt_addition}\n\n"
         f"Find recent local news, events, and developments for {company} and competitors in {location}."
-        f" Focus on last 3-6 months of local business activity."
+        f" Focus on last 3-6 months of local business activity.",
+        company=company,
+        domain=domain,
+        location=location,
     )
 
     # ── Step 7: Customer Feedback ─────────────────────────────────────────────
@@ -311,7 +428,10 @@ def main():
         "Customer Feedback",
         customer_feedback_agent(),
         f"{context}{competitor_prompt_addition}\n\n"
-        f"Mine customer reviews from Google, Yelp, TripAdvisor for {company} and all local competitors in {location}."
+        f"Mine customer reviews from Google, Yelp, TripAdvisor for {company} and all local competitors in {location}.",
+        company=company,
+        domain=domain,
+        location=location,
     )
     
     # Extract Google review counts and ratings from feedback output
@@ -378,16 +498,19 @@ Business: {company} | Type: {domain} | Location: {location}
 Competitor Count: {shared_data['competitor_count']}
 
 Key Local Research Findings:
-- Local Competitor Discovery: {step_results['discovery'][:1500]}
-- Product & Service Analysis: {step_results['product'][:1500]}
-- Pricing & Business Model: {step_results['pricing'][:1000]}
-- Customer Feedback: {step_results['feedback'][:1000]}
-- Local News & Events: {step_results['news'][:800]}
+- Local Competitor Discovery: {clean_cutoff(step_results['discovery'], max_chars=SWOT_CONTEXT_SECTION_MAX)}
+- Product & Service Analysis: {clean_cutoff(step_results['product'], max_chars=SWOT_CONTEXT_SECTION_MAX)}
+- Pricing & Business Model: {clean_cutoff(step_results['pricing'], max_chars=SWOT_CONTEXT_SECTION_MAX)}
+- Customer Feedback: {clean_cutoff(step_results['feedback'], max_chars=SWOT_CONTEXT_SECTION_MAX)}
+- Local News & Events: {clean_cutoff(step_results['news'], max_chars=SWOT_CONTEXT_SECTION_MAX)}
 """
         step_results["swot"] = run_step(
             "SWOT Analysis",
             swot_synthesis_agent(),
-            swot_context
+            swot_context,
+            company=company,
+            domain=domain,
+            location=location,
         )
 
     # ── Advanced Sections (if enabled) ────────────────────────────────────────
@@ -398,35 +521,41 @@ Key Local Research Findings:
 Business: {company} | Type: {domain} | Location: {location}
 
 Complete Research Summary:
-- Discovery: {step_results['discovery'][:1000]}
-- Product: {step_results['product'][:1000]}
-- Pricing: {step_results['pricing'][:800]}
-- SEO: {step_results['seo'][:800]}
-- Social: {step_results['social'][:800]}
-- News: {step_results['news'][:600]}
-- Feedback: {step_results['feedback'][:1000]}
-- SWOT: {step_results['swot'][:1000]}
+- Discovery: {clean_cutoff(step_results['discovery'], max_chars=ADVANCED_CONTEXT_SECTION_MAX)}
+- Product: {clean_cutoff(step_results['product'], max_chars=ADVANCED_CONTEXT_SECTION_MAX)}
+- Pricing: {clean_cutoff(step_results['pricing'], max_chars=ADVANCED_CONTEXT_SECTION_MAX)}
+- SEO: {clean_cutoff(step_results['seo'], max_chars=ADVANCED_CONTEXT_SECTION_MAX)}
+- Social: {clean_cutoff(step_results['social'], max_chars=ADVANCED_CONTEXT_SECTION_MAX)}
+- News: {clean_cutoff(step_results['news'], max_chars=ADVANCED_CONTEXT_SECTION_MAX)}
+- Feedback: {clean_cutoff(step_results['feedback'], max_chars=ADVANCED_CONTEXT_SECTION_MAX)}
+- SWOT: {clean_cutoff(step_results['swot'], max_chars=ADVANCED_CONTEXT_SECTION_MAX)}
 """
         advanced_result = run_step(
             "Advanced Strategic Analysis",
             advanced_sections_agent(),
-            advanced_context
+            advanced_context,
+            company=company,
+            domain=domain,
+            location=location,
         )
-        # Parse the advanced result into sections (simple parsing based on headers)
+        # Parse the advanced result into sections (headers → canonical keys via SECTION_KEY_MAP)
         sections = {}
         current_section = None
         current_content = []
         for line in advanced_result.split('\n'):
             if line.startswith('###') or line.startswith('##'):
                 if current_section:
-                    sections[current_section.lower().replace(' ', '_')] = '\n'.join(current_content)
+                    canonical_key = map_advanced_header_to_canonical_key(current_section)
+                    sections[canonical_key] = '\n'.join(current_content)
                 current_section = line.strip('#').strip()
                 current_content = []
             else:
                 current_content.append(line)
         if current_section:
-            sections[current_section.lower().replace(' ', '_')] = '\n'.join(current_content)
+            canonical_key = map_advanced_header_to_canonical_key(current_section)
+            sections[canonical_key] = '\n'.join(current_content)
         advanced_sections = sections
+        print(f"  Advanced section keys: {sorted(advanced_sections.keys())}")
 
     # ── Build Final Report ────────────────────────────────────────────────────
     print("\n📄 Building final report...")
