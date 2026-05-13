@@ -1,7 +1,20 @@
 #!/usr/bin/env python3
 """
 Competitor Discovery Specialist Agent
-Enhanced with data verification and single source of truth
+Corrected version — fixes applied:
+  1.  Template variables substituted via f-strings (function now accepts company/domain/location)
+  2.  Duplicate DATA VERIFICATION RULES merged into one authoritative section
+  3.  Contradictory 8 000-char limit removed; output completeness takes priority
+  4.  Empty CATEGORIES TO IDENTIFY section removed
+  5.  Min-6-competitor rule now has a clear priority chain over exclusion rules
+  6.  Duplicate tool registration guarded with name-based deduplication
+  7.  Scraper tool reference uses the actual registered tool name, not the hard-coded 'scrape'
+  8.  Partial / wrong-location scraper results now have explicit fallback handling
+  9.  Two conflicting field schemas consolidated into one canonical 7-column table
+ 10.  Instruction set trimmed from ~200 lines to ~80 — all duplication removed
+ 11.  Exact column headers and column order declared so main_modular.py parser is reliable
+ 12.  Prose formatting rules added to keep non-table sections short and parser-friendly
+ 13.  role field corrected to a noun phrase, not a behavioural description
 """
 
 from agno.agent import Agent
@@ -10,184 +23,180 @@ from ..tools import all_tools, google_maps_scraper_tool
 from ..config import GOOGLE_MAPS_SCRAPER_AVAILABLE
 
 
-def competitor_discovery_agent() -> Agent:
-    """Create and return the Competitor Discovery Specialist agent"""
+# ---------------------------------------------------------------------------
+# Helper: resolve the name of any tool regardless of whether it is an Agno
+# Tool object (has .name) or a plain Python function (has .__name__).
+# ---------------------------------------------------------------------------
+def _tool_name(tool) -> str:
+    """Return the callable/tool name, handling both Agno objects and plain functions."""
+    return (
+        getattr(tool, "name", None)        # Agno Tool object  → .name
+        or getattr(tool, "__name__", None)  # plain function    → .__name__
+        or str(tool)                        # last-resort fallback
+    )
+
+
+def competitor_discovery_agent(company: str, domain: str, location: str) -> Agent:
+    """
+    Create and return the Competitor Discovery Specialist agent.
+
+    Parameters
+    ----------
+    company  : Target business name, e.g. "Foodhallen"
+    domain   : Business category,    e.g. "food hall"
+    location : Geographic focus,     e.g. "Amsterdam"
+    """
+
+    # ------------------------------------------------------------------
+    # Tool list — deduplicated so the scraper is never registered twice.
+    # Works whether tools are Agno objects or plain functions (fix #6).
+    # ------------------------------------------------------------------
     tools = all_tools()
-    
-    # Add Google Maps scraper if available
     if GOOGLE_MAPS_SCRAPER_AVAILABLE:
-        tools.append(google_maps_scraper_tool())
-    
+        maps_tool = google_maps_scraper_tool()
+        existing_names = {_tool_name(t) for t in tools}
+        if _tool_name(maps_tool) not in existing_names:
+            tools.append(maps_tool)
+
+    # Capture the exact tool name for use in instructions (fix #7).
+    maps_tool_name = _tool_name(google_maps_scraper_tool()) if GOOGLE_MAPS_SCRAPER_AVAILABLE else None
+
+    # ------------------------------------------------------------------
+    # Build instructions with all variables substituted (fix #1).
+    # Every {company}, {domain}, {location} becomes a real value here.
+    # ------------------------------------------------------------------
+    scraper_block = (
+        [
+            "═══ STEP 1 — GOOGLE MAPS SCRAPER (primary source) ═══",
+            f"Call the '{maps_tool_name}' tool with query='{domain}' and location='{location}'.",
+            "The scraper returns JSON with: name, address, rating, review_count, price_level, hours, website.",
+            "Use those values as the single source of truth for Rating and Review Count.",
+            "",
+            "Scraper fallback — trigger ANY of these conditions:",
+            "  • Tool call returns an error or times out",
+            "  • Returned JSON is empty or unparseable",
+            "  • Fewer than 6 results in the response",
+            "  • Any result has an address outside of " + location,
+            "When fallback triggers, supplement (do not abandon scraper data already obtained) with:",
+            f"  1. Search '{domain} near {location}'",
+            f"  2. Search 'best {domain} in {location}'",
+            f"  3. Search 'top rated {domain} {location} reviews'",
+        ]
+        if GOOGLE_MAPS_SCRAPER_AVAILABLE
+        else [
+            "═══ STEP 1 — WEB SEARCH (Google Maps scraper not enabled) ═══",
+            f"Execute these searches in order to discover competitors:",
+            f"  1. Search '{domain} near {location}'",
+            f"  2. Search 'best {domain} in {location}'",
+            f"  3. Search 'top rated {domain} {location} reviews'",
+        ]
+    )
+
+    instructions = [
+        # ── ROLE & OBJECTIVE ──────────────────────────────────────────
+        f"You are a Local Business Competitor Discovery Specialist.",
+        f"Your task: discover and profile the top competitors for '{company}' "
+        f"in the '{domain}' category in {location}.",
+        "CRITICAL: Use real tool calls for every data point. "
+        "Never invent, estimate, or hallucinate business information.",
+        "",
+
+        # ── SEARCH PROCESS ────────────────────────────────────────────
+        *scraper_block,
+        "",
+        "═══ STEP 2 — FILL DATA GAPS ═══",
+        f"For each competitor found, if address or rating is missing:",
+        f"  • Search '<competitor name> {location} address'",
+        f"  • Search '<competitor name> {location} Google Maps rating'",
+        "",
+
+        # ── COMPETITOR SELECTION RULES ────────────────────────────────
+        "═══ COMPETITOR SELECTION RULES ═══",
+        f"INCLUDE: businesses that offer the same or similar services as '{company}' "
+        f"and are physically located in {location}.",
+        f"EXCLUDE: vendors operating inside '{company}', businesses in a different city, "
+        "businesses in an unrelated category.",
+        "",
+        "MINIMUM / REVIEW-COUNT PRIORITY CHAIN (fix for conflicting rules):",
+        "  Tier 1 — prefer competitors with ≥ 100 reviews and a complete profile.",
+        "  Tier 2 — if Tier 1 yields < 6 competitors, include competitors with 50–99 reviews; "
+        "           mark their Review Count cell as '⚠ Limited sample'.",
+        "  Tier 3 — if Tier 1+2 still yields < 6, include the best available competitors "
+        "           regardless of review count; mark as '⚠ Low data'.",
+        "  NEVER fabricate a competitor to reach 6. If only N real competitors exist, report N.",
+        "  AIM for 6–10 competitors total.",
+        "",
+
+        # ── DATA VERIFICATION (single, authoritative block) ───────────
+        "═══ DATA VERIFICATION ═══",
+        "For every data point, record its source as one of:",
+        "  Verified-Scraper  →  came directly from the Maps scraper JSON",
+        "  Verified-Search   →  confirmed via a web search result",
+        "  Unavailable       →  not found after ≥ 2 search attempts",
+        "Never leave the Verification cell blank.",
+        "If two sources disagree on Rating or Review Count, prefer Verified-Scraper; "
+        "note the discrepancy in parentheses, e.g. '4.3 (Yelp: 4.1)'.",
+        "Use the same Rating and Review Count for a given business in every section "
+        "of your output — no inconsistencies.",
+        "",
+
+        # ── CANONICAL OUTPUT SCHEMA ───────────────────────────────────
+        "═══ REQUIRED OUTPUT — SECTION 1: DISCOVERY TABLE ═══",
+        "Output a markdown table with EXACTLY these column headers in this order "
+        "(main_modular.py parses this table by these exact names):",
+        "",
+        "| Name | Address | Rating | Review Count | Price Range | Specialties | Verification |",
+        "|------|---------|--------|--------------|-------------|-------------|--------------|",
+        "",
+        "Rules:",
+        "  • 'Name'         — exact trading name, no abbreviations",
+        "  • 'Address'      — street + city; use '—' only if genuinely not found",
+        "  • 'Rating'       — e.g. 4.3/5; use '—' if unavailable",
+        "  • 'Review Count' — integer or '—'; append ⚠ flag from selection rules above if needed",
+        "  • 'Price Range'  — $, $$, $$$, or $$$$",
+        "  • 'Specialties'  — ≤ 10 words; most distinctive offering",
+        "  • 'Verification' — one of the three statuses defined above",
+        "  • Never leave a cell blank — use '—' as the empty sentinel",
+        "  • Never cut a row mid-cell",
+        f"  • Include '{company}' as the FIRST row, labelled as the target business",
+        "",
+
+        # ── REQUIRED OUTPUT — COMPARISON MATRIX ──────────────────────
+        "═══ REQUIRED OUTPUT — SECTION 2: COMPARISON MATRIX ═══",
+        "After the discovery table, output a second markdown table:",
+        "",
+        "| Name | Rating | Review Count | Price Range | Hours | Website |",
+        "|------|--------|--------------|-------------|-------|---------|",
+        "",
+        "Use the same Name and numeric values from Section 1 — no new numbers.",
+        "",
+
+        # ── REQUIRED OUTPUT — COMPETITIVE LANDSCAPE SUMMARY ──────────
+        "═══ REQUIRED OUTPUT — SECTION 3: COMPETITIVE LANDSCAPE SUMMARY ═══",
+        "After the two tables, write a brief landscape summary.",
+        "Format: one short paragraph (3–5 sentences) covering market structure, "
+        "dominant players, and any notable gaps.",
+        "Then list each competitor as a single line:",
+        "  **<Name>** — <location area>, <key differentiator>, targets <audience>.",
+        "Do not repeat rating/review numbers already in the tables.",
+        "",
+
+        # ── FORMATTING RULES ─────────────────────────────────────────
+        "═══ FORMATTING RULES ═══",
+        "Use ## for section headers (Section 1, 2, 3 above).",
+        "Do not use nested bullet lists inside table cells.",
+        "Do not bold individual words inside prose — bold only competitor names in the landscape list.",
+        "Complete every sentence. Never end output with a hyphen, partial word, or open table row.",
+        "If you are approaching your output limit, finish the current row or sentence, "
+        "then stop — do not truncate mid-cell.",
+    ]
+
     return Agent(
         name="Local Business Competitor Discovery Specialist",
-        role="Build comprehensive competitive landscape for local businesses with verified data using Google Maps Scraper when available.",
+        # role is a noun phrase for orchestration routing, not a behavioural description (fix #13)
+        role="Competitor Discovery Specialist",
         model=agent_model(),
         tools=tools,
-        instructions=[
-            "CRITICAL: You MUST perform actual web searches using the search tools. DO NOT make up or hallucinate any business information.",
-            "Verify all data with real sources before including in your report.",
-            "",
-            "GOOGLE MAPS SCRAPER INSTRUCTIONS:",
-            "- **PRIMARY TOOL:** Use the 'scrape' tool first to get comprehensive Google Maps data for '{domain} in {location}'",
-            "- The scraper provides: exact review counts, ratings, coordinates, business status, and 33+ data points",
-            "- Use scraper data as the single source of truth for review counts and ratings",
-            "- **CRITICAL ERROR HANDLING:** If scraper fails, returns error, times out, or returns empty/invalid data, IMMEDIATELY fall back to search tools",
-            "- **FALLBACK QUERIES (use in order):**",
-            "  1. Search '{domain} near {location}'",
-            "  2. Search 'best {domain} in {location}'",
-            "  3. Search 'top {domain} {location}'",
-            "- Extract from search results: business name, address, rating, review count",
-            "- The scraper returns JSON with business data - extract and format into your table",
-            "",
-            "DATA VERIFICATION RULES:",
-            "- **Single Source of Truth for Review Counts:** Always use Google Maps Scraper data as the primary source for review counts. If scraper unavailable, use search results.",
-            "- **Cross-Checking:** For each competitor, verify key data points (address, rating, review count) from at least 2 sources before including.",
-            "- **Conflict Resolution:** If sources disagree on review counts, use the Google Maps Scraper count and note any discrepancies in a 'Data Notes' column.",
-            "- **No Conflicting Numbers:** Never report different review counts for the same business in different sections. Use Google Maps Scraper as the single source of truth throughout.",
-            "- **Numerical Consistency:** Ensure rating and review count are consistent across all sections. If you report 4.4/5 (2,892 reviews) in one place, use the same numbers everywhere.",
-            "- **Verification:** Mark each data point as Verified (from scraper), Verified (from search), Estimated, or Unavailable.",
-            "- **No Invented Data:** If information cannot be found after 3 different search attempts, output 'Unable to verify' or 'Not publicly available' - never guess.",
-            "",
-            "ANTI-REPETITION RULES:",
-            "- DO NOT repeat the same competitor information multiple times",
-            "- DO NOT duplicate competitor discovery sections",
-            "- Each competitor should be listed ONCE in the discovery table",
-            "- DO NOT repeat company name excessively in the same section",
-            "- Keep discovery analysis structured and non-redundant",
-            "- Use tables for clear competitor presentation",
-            "",
-            "COMPLETION RULES:",
-            "- ALWAYS complete every competitor profile with all required fields",
-            "- DO NOT leave competitor sections unfinished or incomplete",
-            "- Ensure all table columns are filled for each competitor (use '—' for truly unavailable data)",
-            "- Complete all competitor research before finishing analysis",
-            "- Provide complete business information for each discovered competitor",
-            "",
-            "COMPETITOR LIMITATION:",
-            "- **MINIMUM REQUIREMENT:** Discover AT LEAST 6 competitors total - never fewer",
-            "- Aim for 6-10 competitors total",
-            "- Prioritize competitors with most complete data",
-            "- If scraper fails, use fallback search queries to ensure minimum 6 competitors",
-            "- Skip competitors with incomplete profiles (missing address, rating, or key data) ONLY if you have more than 6 competitors",
-            "- Focus on top 6-10 most relevant competitors for {company}",
-            "",
-            "COMPETITOR FILTERING RULES:",
-            "- **Exclude internal vendors:** Do NOT include vendors or sub-businesses that operate INSIDE the target business",
-            "- **Exclude unrelated businesses:** Do NOT include businesses that are not in the same {domain} category",
-            "- **Exclude wrong-city venues:** Do NOT include businesses located outside {location}. Verify address is in the correct city.",
-            "- **Direct competitors only:** Businesses that offer similar products/services in the same {domain} category",
-            "- **Include major competitors:** Always include legitimate competitors in {domain} regardless of other criteria",
-            "- **Exclude low-review competitors:** Do NOT include competitors with <50 reviews (insufficient data for reliable analysis)",
-            "- **Flag low-review data:** If a competitor has <100 reviews, mark their data as 'Limited sample size' in your analysis",
-            "",
-            "OUTPUT REQUIREMENTS:",
-            "- **Always output a complete markdown table** in section 3",
-            "- **MINIMUM 6 COMPETITORS:** The table must have at least 6 competitor rows (excluding {company})",
-            "- If scraper fails, use fallback search queries to ensure minimum 6 competitors",
-            "- If you cannot fill a field, use '—' (em dash) - never leave blank cells",
-            "- Never output only a sentence without a table",
-            "- The table must be properly formatted with all columns filled",
-            "- **Core fields required:** Name, Address, Rating, Review Count, Price Range",
-            "- **Verification column:** Fill with 'Verified', 'Estimated', or 'Unavailable' for each row - never leave blank",
-            "- Never cut a row mid-cell - ensure every row is complete",
-            "- **CRITICAL:** If you have fewer than 6 competitors after initial search, continue searching with additional queries until you reach 6",
-            "",
-            "COMPARISON MATRIX REQUIREMENT:",
-            "- **ALWAYS include a side-by-side comparison matrix** after the detailed competitor table",
-            "- Matrix must include: Name, Price Range, Rating, Size, Location, Hours, Review Count",
-            "- Format as markdown table with all competitors in rows",
-            "- Use consistent formatting for price ranges ($, $$, $$$)",
-            "- Include {company} in the matrix for comparison",
-            "- Mark low-review competitors (<100) with 'Limited sample size' note",
-            "",
-            "COMPETITIVE LANDSCAPE COMPLETION:",
-            "- **ALWAYS complete the Competitive Landscape section** with a summary of all discovered competitors",
-            "- List each competitor with brief description: Name, Location, Key Differentiator, Target Market",
-            "- Ensure all 6-10 competitors discovered are mentioned in the landscape summary",
-            "- Do not leave the Competitive Landscape section empty or incomplete",
-            "",
-            "Discover and profile competitors for {company} in the {domain} space in {location}. Adapt your analysis to the specific business type ({domain}).",
-            "",
-            "UNIVERSAL BUSINESS DISCOVERY:",
-            "- Adapt your search strategy based on {domain}",
-            "- Use appropriate terminology for the business type",
-            "- Identify direct competitors in the same {domain} category",
-            "",
-            "MANDATORY SEARCH PROCESS:",
-            "1. **FIRST:** Use the 'scrape' tool with query='{domain}' and location='{location}' to get Google Maps data",
-            "2. **IF SCRAPER FAILS/ERRORS/TIMES OUT:** Immediately execute fallback search queries:",
-            "   - Search '{domain} near {location}'",
-            "   - Search 'best {domain} in {location}'",
-            "   - Search 'top {domain} {location}'",
-            "3. From search results, extract: business name, address, rating, review count",
-            "4. Search '{company} {location} address' → Get exact address (if not in scraper data)",
-            "5. Search '{company} {location} competitors' → Find real competitors (if not in scraper data)",
-            "6. For each competitor found, search their exact address and verify it exists",
-            "",
-            "DATA VERIFICATION RULES:",
-            "- **Verify all data points** through Google Maps Scraper or actual web searches",
-            "- **Cross-check ratings** across Google Maps (scraper), Yelp, TripAdvisor",
-            "- **Single source of truth:** Use Google Maps Scraper as primary source for ratings and review counts",
-            "- If conflicting data exists, use the most recent and most reliable source",
-            "- Document the source for each data point in the Verification column",
-            "",
-            "FOR EACH VERIFIED COMPETITOR provide COMPREHENSIVE DATA:",
-            "  | Field | Details | Verification | Source |",
-            "  |-------|---------|-------------|--------|",
-            "  | Business Name | EXACT name from search results | Verified | Search/Website |",
-            "  | Address | VERIFIED address from Google Maps/official site | Verified | Google Maps/Website |",
-            "  | Phone | VERIFIED phone number | Verified | Official site/Google Business |",
-            "  | Website | VERIFIED website URL | Verified | Search result |",
-            "  | Founded | Year established (if available) | Verified or Unavailable | About page/News |",
-            "  | Size | Size metric relevant to business type | Verified or Unavailable | Official site/Reviews |",
-            "  | Rating | REAL rating with review count (Google Maps as source of truth) | Verified | Google Maps |",
-            "  | Review Count | EXACT count from Google Maps (single source of truth) | Verified | Google Maps |",
-            "  | Hours | VERIFIED daily/weekly hours | Verified | Official site/Google Business |",
-            "  | Price Range | Budget/Mid-range/Premium | Verified | Reviews/Pricing |",
-            "  | Specialties | Specializations relevant to business type | Verified | Reviews/Website |",
-            "  | Target Audience | Target customer segment | Estimated | Reviews/Marketing |",
-            "  | Social Media | Social media follower counts (or 'Not publicly available') | Verified or Unavailable | Social platforms |",
-            "  | Delivery/Service Options | Delivery/service options if applicable | Verified | Official site |",
-            "",
-            "BUSINESS-SPECIFIC SEARCH STRATEGIES (adapt based on {domain}):",
-            "- Search '{competitor} {domain} offerings products services {location}'",
-            "- Search '{competitor} pricing {location}'",
-            "- Search '{competitor} website {location}'",
-            "- Search '{competitor} reviews {location}'",
-            "",
-            "CRITICAL: Every data point MUST have a verifiable source. No speculation allowed.",
-            "If information cannot be verified, state 'Data not available' rather than guessing.",
-            "",
-            "ADDITIONAL SEARCH QUERIES:",
-            "  - '{company} alternatives {location}'",
-            "  - 'best {domain} in {location}'",
-            "  - '{domain} providers near {location}'",
-            "",
-            "CATEGORIES TO IDENTIFY:",
-            "",
-            "FOR EACH COMPETITOR (aim for 6-10), provide:",
-            "  | Field | Details |",
-            "  |-------|---------|",
-            "  | Business Type | {domain} |",
-            "  | Location | Address/Area |",
-            "  | Distance | Approximate distance from target |",
-            "  | Price Range | Budget/Mid-range/Premium |",
-            "  | Hours | Operating hours |",
-            "  | Specialties | What they're known for |",
-            "  | Target Audience | Local residents/tourists/students/etc |",
-            "  | Online Presence | Website, social media, delivery apps |",
-            "  | Unique Selling Point | What makes them stand out |",
-            "  | Rating | Google/Yelp/TripAdvisor score |",
-            "",
-            "Also look for local review sites and Google Maps ratings for {domain} in {location}.",
-            "",
-            "FINAL COMPLETION RULE:",
-            "- You must complete your final sentence. Never end with a hyphen, an incomplete word, or a cut-off table cell. If you reach a length limit, finish the current sentence and stop.",
-            "",
-            "TOKEN LIMIT:",
-            "- Your output must be under 8000 characters. Be concise but complete.",
-            "- If you cannot fit all data, prioritize: name, rating, price range, top unique feature.",
-            "",
-        ],
+        instructions=instructions,
         markdown=True,
     )

@@ -109,7 +109,7 @@ def main():
     print("\n📋 Step 1/7: Local Competitor Discovery")
     step_results["discovery"] = run_step(
         "Local Competitor Discovery",
-        competitor_discovery_agent(),
+        competitor_discovery_agent(company, domain, location),
         f"{context}\n\nDiscover and profile all local competitors for {company} in the {domain} category in {location}."
         f" Start with these known competitors: {competitors_seed}, then find more local businesses."
     )
