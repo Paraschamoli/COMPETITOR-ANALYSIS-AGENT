@@ -48,7 +48,11 @@ def validate_table_rows(table_text: str, max_cell_length: int = 200) -> str:
     - Discards incomplete rows
     Returns cleaned table text.
     """
-    lines = table_text.strip().split('\n')
+    stripped = table_text.strip()
+    if len(stripped) < 2 or not validate_table(stripped):
+        return table_text
+
+    lines = stripped.split("\n")
     if len(lines) < 2:
         return table_text
     
@@ -193,75 +197,81 @@ def generate_positioning_matrix(shared_data: Dict = None) -> str:
     """
     if not ENABLE_VISUAL_CHARTS:
         return "*Positioning matrix visualization disabled*"
-    
-    # Extract competitor data from shared_data
-    competitor_list = shared_data.get('competitor_list', []) if shared_data else []
-    google_reviews = shared_data.get('google_reviews', {}) if shared_data else {}
-    price_position = shared_data.get('price_position', 'Data not available') if shared_data else 'Data not available'
-    
-    # Categorize competitors into quadrants
-    high_price_high_exp = []
-    high_price_low_exp = []
-    low_price_high_exp = []
-    low_price_low_exp = []
-    
+
+    competitor_list = shared_data.get("competitor_list", []) if shared_data else []
+    google_reviews = shared_data.get("google_reviews", {}) if shared_data else {}
+    per_prices: Dict[str, str] = (shared_data or {}).get("per_competitor_prices") or {}
+    target_company = (shared_data or {}).get("company", "").strip() if shared_data else ""
+    global_pp = shared_data.get("price_position", "Mid-range") if shared_data else "Mid-range"
+
+    high_price_high_exp: List[str] = []
+    high_price_low_exp: List[str] = []
+    low_price_high_exp: List[str] = []
+    low_price_low_exp: List[str] = []
+
+    def experience_from_rating(rating) -> str:
+        if rating is None:
+            return "Mid"
+        try:
+            r = float(rating)
+        except (TypeError, ValueError):
+            return "Mid"
+        if r >= 4.0:
+            return "High"
+        if r >= 3.0:
+            return "Mid"
+        return "Low"
+
+    def global_price_to_tier(pos: str) -> str:
+        if pos == "Premium":
+            return "High"
+        if pos == "Budget":
+            return "Low"
+        return "Mid"
+
+    def assign_to_quadrants(name: str, comp_price: str, experience: str) -> None:
+        if comp_price == "High" and experience == "High":
+            high_price_high_exp.append(name)
+        elif comp_price == "High" and experience == "Low":
+            high_price_low_exp.append(name)
+        elif comp_price == "Low" and experience == "High":
+            low_price_high_exp.append(name)
+        elif comp_price == "Low" and experience == "Low":
+            low_price_low_exp.append(name)
+        elif comp_price == "Mid" and experience == "High":
+            low_price_high_exp.append(name)
+        elif comp_price == "Mid" and experience == "Low":
+            low_price_low_exp.append(name)
+        else:
+            low_price_low_exp.append(name)
+
     for competitor in competitor_list:
-        name = competitor.get('name', '')
+        name = (competitor.get("name") or "").strip()
         if not name:
             continue
-        
-        # Get rating from google_reviews or competitor data
+        if target_company and name.casefold() == target_company.casefold():
+            continue
+        comp_price = per_prices.get(name, "Mid")
         rating = None
         if name in google_reviews:
-            rating = google_reviews[name].get('rating')
-        if not rating:
-            # Try to extract from competitor data
-            rating_str = competitor.get('rating', '')
+            rating = google_reviews[name].get("rating")
+        if rating is None:
+            rating_str = competitor.get("rating", "")
             if rating_str:
                 try:
-                    rating = float(rating_str.split('/')[0])
+                    rating = float(str(rating_str).split("/")[0])
                 except (ValueError, IndexError):
-                    pass
-        
-        # Map price position to Low/Mid/High
-        # Use the global price_position as baseline, but could be per-competitor
-        if price_position == 'Premium':
-            comp_price = 'High'
-        elif price_position == 'Budget':
-            comp_price = 'Low'
-        elif price_position == 'Mid-range':
-            comp_price = 'Mid'
-        else:
-            comp_price = 'Mid'  # Default
-        
-        # Determine experience score from rating (1-5 scale)
-        if rating:
-            if rating >= 4.0:
-                experience = 'High'
-            elif rating >= 3.0:
-                experience = 'Mid'
-            else:
-                experience = 'Low'
-        else:
-            experience = 'Mid'  # Default if no rating
-        
-        # Categorize into quadrants
-        if comp_price == 'High' and experience == 'High':
-            high_price_high_exp.append(name)
-        elif comp_price == 'High' and experience == 'Low':
-            high_price_low_exp.append(name)
-        elif comp_price == 'Low' and experience == 'High':
-            low_price_high_exp.append(name)
-        elif comp_price == 'Low' and experience == 'Low':
-            low_price_low_exp.append(name)
-        elif comp_price == 'Mid' and experience == 'High':
-            low_price_high_exp.append(name)  # Mid price with high exp = value
-        elif comp_price == 'Mid' and experience == 'Low':
-            low_price_low_exp.append(name)  # Mid price with low exp = budget
-        else:
-            low_price_low_exp.append(name)  # Default
-    
-    # Build matrix with actual competitor names
+                    rating = None
+        experience = experience_from_rating(rating)
+        assign_to_quadrants(name, comp_price, experience)
+
+    if target_company:
+        comp_price = global_price_to_tier(global_pp)
+        gr = google_reviews.get(target_company, {})
+        rating = gr.get("rating") if isinstance(gr, dict) else None
+        experience = experience_from_rating(rating)
+        assign_to_quadrants(target_company, comp_price, experience)
+
     matrix = f"""
 **Competitive Positioning Matrix (Price vs. Experience Quality):**
 
@@ -312,32 +322,62 @@ def add_verification_column_to_tables(text: str) -> str:
             
             if not has_verification and len(header_cells) >= 2:
                 # Add Verification column to header
-                header_line = line.rstrip() + ' Verification |'
-                result.append(header_line)
-                
-                # Add separator
-                sep_line = lines[i+1].rstrip() + '-------------|'
-                result.append(sep_line)
-                
-                # Process data rows
+                header_line = line.rstrip() + " Verification |"
+                sep_line = lines[i + 1].rstrip() + "-------------|"
+                table_lines = [header_line, sep_line]
                 i += 2
-                while i < len(lines) and lines[i].strip().startswith('|') and '---' not in lines[i]:
+                while i < len(lines) and lines[i].strip().startswith("|") and "---" not in lines[i]:
                     row = lines[i].rstrip()
-                    # Determine verification status based on content
-                    if 'verified' in row.lower() or 'google maps' in row.lower():
-                        verification = ' Verified'
-                    elif 'estimated' in row.lower() or 'approximate' in row.lower():
-                        verification = ' Estimated'
+                    if "verified" in row.lower() or "google maps" in row.lower():
+                        verification = " Verified"
+                    elif "estimated" in row.lower() or "approximate" in row.lower():
+                        verification = " Estimated"
                     else:
-                        verification = ' Verified'  # Default to verified if data is present
-                    result.append(row + verification + ' |')
+                        verification = " Verified"
+                    table_lines.append(row + verification + " |")
                     i += 1
+                table_block = "\n".join(table_lines)
+                table_block = validate_table_rows(table_block)
+                result.extend(table_block.split("\n"))
                 continue
         
         result.append(line)
         i += 1
     
     return '\n'.join(result)
+
+
+def generate_customer_personas(research_summary: str) -> str:
+    """
+    Generic persona templates when LLM advanced output is unavailable.
+    ``research_summary`` may be passed for future enrichment; this stub does not
+    invent business-specific facts or fabricated quotes.
+    """
+    _ = research_summary  # reserved for callers / future summarization
+    q = "[Insert verified quote from reviews — platform and date required]"
+    return f"""*Template personas — replace bracketed quotes with verified review excerpts.*
+
+**Persona 1: The Convenience-First Visitor**
+- **Demographics:** Local residents and workers prioritizing speed and predictability
+- **Behavior:** Short visits, repeat patterns tied to commute or errands
+- **Motivations:** Minimal wait time, easy ordering, clear information
+- **Pain Points:** Crowding, unclear menus or pricing, inconsistent hours
+- **Quote:** "{q}"
+
+**Persona 2: The Experience-Seeking Guest**
+- **Demographics:** Mixed ages; often social or occasion-driven visits
+- **Behavior:** Longer dwell time; compares alternatives before choosing
+- **Motivations:** Atmosphere, variety, perceived quality, share-worthy moments
+- **Pain Points:** Noise, service variability, disappointment vs. expectations
+- **Quote:** "{q}"
+
+**Persona 3: The Value-Conscious Chooser**
+- **Demographics:** Budget-aware; compares options on price and portion
+- **Behavior:** Uses promotions, loyalty, or bundles when available
+- **Motivations:** Fair price-to-quality ratio, transparency, deals without surprises
+- **Pain Points:** Hidden fees, shrinking portions, unclear value communication
+- **Quote:** "{q}"
+"""
 
 
 def generate_risk_assessment() -> str:
@@ -530,10 +570,22 @@ def synthesize_final_report(
     competitor_count = shared_data.get('competitor_count', 0) if shared_data else 0
     
     # Extract top praise category and percentage from feedback
-    feedback_text = step_results.get('feedback', '')
-    import re
+    feedback_text = step_results.get("feedback", "")
+    feedback_sentiment_chart = ""
+    pos_m = re.search(r"Positive[^:]*:\s*~?(\d+)\s*%", feedback_text, re.IGNORECASE)
+    neu_m = re.search(r"Neutral[^:]*:\s*~?(\d+)\s*%", feedback_text, re.IGNORECASE)
+    neg_m = re.search(r"Negative[^:]*:\s*~?(\d+)\s*%", feedback_text, re.IGNORECASE)
+    if pos_m and neu_m and neg_m:
+        try:
+            feedback_sentiment_chart = "\n\n" + generate_sentiment_chart(
+                float(pos_m.group(1)),
+                float(neu_m.group(1)),
+                float(neg_m.group(1)),
+            )
+        except (ValueError, TypeError):
+            feedback_sentiment_chart = ""
     # Try multiple patterns for top praise percentage
-    top_praise_match = re.search(r'(\d+)%.*?positive', feedback_text, re.IGNORECASE)
+    top_praise_match = re.search(r"(\d+)%.*?positive", feedback_text, re.IGNORECASE)
     if not top_praise_match:
         top_praise_match = re.search(r'positive.*?(\d+)%', feedback_text, re.IGNORECASE)
     if not top_praise_match:
@@ -680,93 +732,101 @@ All data points are cross-verified from multiple sources. Information that could
 
 ## 9. Customer Feedback Analysis
 
-{add_verification_column_to_tables(clean_markdown(step_results.get('feedback', '*Customer feedback not available from public sources*')))}
+{add_verification_column_to_tables(clean_markdown(step_results.get('feedback', '*Customer feedback not available from public sources*')))}{feedback_sentiment_chart}
 
 """
 
     # Add advanced sections if enabled
     if ENABLE_ADVANCED_SECTIONS:
-        # Customer Personas - only use actual research data
+        def _advanced_llm_ok(s: str) -> bool:
+            return bool(s) and "*not available*" not in s.lower() and len(s) > 100
+
+        recommendations_note = (
+            "*Recommendations synthesized from available research — validate against your own priorities.*"
+        )
+
+        research_summary = "\n\n---\n\n".join(
+            p
+            for p in (
+                step_results.get("feedback") or "",
+                step_results.get("discovery") or "",
+                step_results.get("product") or "",
+            )
+            if p
+        )[:12000]
+
         personas_content = get_advanced_section(
             advanced_sections,
-            'personas',
-            legacy_keys=['1._customer_personas', 'customer_personas']
+            "personas",
+            legacy_keys=["1._customer_personas", "customer_personas"],
         )
-        if not personas_content or '*not available*' in personas_content.lower() or len(personas_content) < 100:
-            personas_content = "*Insufficient data - Customer personas could not be generated from available research data.*"
-        
-        # Risk Assessment - only use actual research data
+        if not _advanced_llm_ok(personas_content):
+            personas_content = generate_customer_personas(research_summary)
+
         risk_content = get_advanced_section(
             advanced_sections,
-            'risk',
-            legacy_keys=['2._risk_assessment', 'risk_assessment']
+            "risk",
+            legacy_keys=["2._risk_assessment", "risk_assessment"],
         )
-        if not risk_content or '*not available*' in risk_content.lower() or len(risk_content) < 100:
-            risk_content = "*Insufficient data - Risk assessment could not be generated from available research data.*"
-        
-        # Actionable Recommendations - only use actual research data
+        if not _advanced_llm_ok(risk_content):
+            risk_content = generate_risk_assessment()
+
         recommendations_content = get_advanced_section(
             advanced_sections,
-            'recommendations',
-            legacy_keys=['3._actionable_recommendations', 'actionable_recommendations']
+            "recommendations",
+            legacy_keys=["3._actionable_recommendations", "actionable_recommendations"],
         )
-        if not recommendations_content or '*not available*' in recommendations_content.lower() or len(recommendations_content) < 100:
-            recommendations_content = "*Insufficient data - Actionable recommendations could not be generated from available research data.*"
-        
-        # Financial Benchmarks - only use actual research data
+        if not _advanced_llm_ok(recommendations_content):
+            recommendations_content = recommendations_note
+
         financial_content = get_advanced_section(
             advanced_sections,
-            'financial',
-            legacy_keys=['4._financial_benchmarks', 'financial_benchmarks']
+            "financial",
+            legacy_keys=["4._financial_benchmarks", "financial_benchmarks"],
         )
-        if not financial_content or '*not available*' in financial_content.lower() or len(financial_content) < 100:
+        if not financial_content or "*not available*" in financial_content.lower() or len(financial_content) < 100:
             financial_content = "*Insufficient data - Financial benchmarks could not be generated from available research data. Public financial information not available.*"
-        
-        # Digital Ads - only use actual research data
+
         digital_ads_content = get_advanced_section(
             advanced_sections,
-            'digital_ads',
-            legacy_keys=['5._digital_ads_paid_media', 'digital_ads_paid_media']
+            "digital_ads",
+            legacy_keys=["5._digital_ads_paid_media", "digital_ads_paid_media"],
         )
-        if not digital_ads_content or '*not available*' in digital_ads_content.lower() or len(digital_ads_content) < 100:
+        if not digital_ads_content or "*not available*" in digital_ads_content.lower() or len(digital_ads_content) < 100:
             digital_ads_content = "*Insufficient data - Digital ads analysis could not be generated from available research data.*"
-        
-        # UGC & Hashtags - only use actual research data
+
         ugc_content = get_advanced_section(
             advanced_sections,
-            'ugc',
-            legacy_keys=['6._ugc_hashtag_analysis', 'ugc_hashtag_analysis']
+            "ugc",
+            legacy_keys=["6._ugc_hashtag_analysis", "ugc_hashtag_analysis"],
         )
-        if not ugc_content or '*not available*' in ugc_content.lower() or len(ugc_content) < 100:
-            ugc_content = "*Insufficient data - UGC and hashtag analysis could not be generated from available research data.*"
-        
-        # Accessibility - only use actual research data
+        if not _advanced_llm_ok(ugc_content):
+            ugc_content = generate_ugc_hashtag_analysis(step_results.get("social", "") or "")
+
         accessibility_content = get_advanced_section(
             advanced_sections,
-            'accessibility',
-            legacy_keys=['7._accessibility_inclusivity', 'accessibility_inclusivity']
+            "accessibility",
+            legacy_keys=["7._accessibility_inclusivity", "accessibility_inclusivity"],
         )
-        if not accessibility_content or '*not available*' in accessibility_content.lower() or len(accessibility_content) < 100:
-            accessibility_content = "*Insufficient data - Accessibility analysis could not be generated from available research data. Verification required from official sources.*"
-        
-        # Seasonal Trends - only use actual research data
+        if not _advanced_llm_ok(accessibility_content):
+            accessibility_content = generate_accessibility_analysis()
+
         seasonal_content = get_advanced_section(
             advanced_sections,
-            'seasonal',
-            legacy_keys=['8._seasonal_trends', 'seasonal_trends']
+            "seasonal",
+            legacy_keys=["8._seasonal_trends", "seasonal_trends"],
         )
-        if not seasonal_content or '*not available*' in seasonal_content.lower() or len(seasonal_content) < 100:
-            seasonal_content = "*Insufficient data - Seasonal trends could not be generated from available research data. Industry reports or local tourism data required.*"
-        
-        # Action Plan - only use actual research data
+        if not _advanced_llm_ok(seasonal_content):
+            seasonal_content = generate_seasonal_heatmap()
+
         action_plan_content = get_advanced_section(
             advanced_sections,
-            'action_plan',
-            legacy_keys=['9._next_steps_action_plan', 'next_steps_action_plan']
+            "action_plan",
+            legacy_keys=["9._next_steps_action_plan", "next_steps_action_plan"],
         )
-        if not action_plan_content or '*not available*' in action_plan_content.lower() or len(action_plan_content) < 100:
-            action_plan_content = "*Insufficient data - Action plan could not be generated from available research data.*"
-        
+        if not _advanced_llm_ok(action_plan_content):
+            action_plan_content = generate_action_plan(step_results.get("swot", "") or "")
+
         report += f"""---
 
 ## 10. Customer Personas

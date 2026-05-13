@@ -250,9 +250,11 @@ def main():
     
     # Shared data for cross-agent communication
     shared_data = {
-        'competitor_count': 0,
-        'competitor_list': [],
-        'google_reviews': {}
+        "company": company,
+        "competitor_count": 0,
+        "competitor_list": [],
+        "google_reviews": {},
+        "per_competitor_prices": {},
     }
 
     # ── Step 1: Competitor Discovery ──────────────────────────────────────────
@@ -411,7 +413,7 @@ def main():
         location=location,
     )
     
-    # Extract price position from pricing output
+    # Extract target company's price position only from its own section (not whole pricing doc)
     pricing_text = step_results["pricing"]
     price_position = "Data not available"
     if '€€€' in pricing_text:
