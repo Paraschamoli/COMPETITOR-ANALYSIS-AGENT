@@ -146,7 +146,22 @@ def clean_markdown(text: str) -> str:
     # Fix incomplete horizontal rules
     cleaned = '\n'.join(cleaned_lines)
     cleaned = cleaned.replace('---\n', '\n---\n')
-    
+
+    # Remove orphaned numeric section headers — headings that are just a number
+    # with optional punctuation and no title text, e.g. "## 1." or "### 2."
+    # Legitimate headings like "## 1. Executive Summary" are preserved because
+    # they contain non-whitespace text after the number/dot.
+    heading_lines = cleaned.split('\n')
+    filtered_lines = []
+    for line in heading_lines:
+        if re.match(r'^#{1,4}\s+\d+\.?\s*$', line.strip()):
+            continue  # drop orphaned numeric heading, no title
+        filtered_lines.append(line)
+    cleaned = '\n'.join(filtered_lines)
+
+    # Collapse 3+ consecutive blank lines down to 2 (artifact from removed content)
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+
     return cleaned
 
 
@@ -261,17 +276,46 @@ def generate_positioning_matrix(shared_data: Dict = None) -> str:
                 try:
                     rating = float(str(rating_str).split("/")[0])
                 except (ValueError, IndexError):
-                    rating = None
-        experience = experience_from_rating(rating)
-        assign_to_quadrants(name, comp_price, experience)
-
-    if target_company:
-        comp_price = global_price_to_tier(global_pp)
-        gr = google_reviews.get(target_company, {})
-        rating = gr.get("rating") if isinstance(gr, dict) else None
-        experience = experience_from_rating(rating)
-        assign_to_quadrants(target_company, comp_price, experience)
-
+                    pass
+        
+        # Map price position to Low/Mid/High
+        if price_position == 'Premium':
+            comp_price = 'High'
+        elif price_position == 'Budget':
+            comp_price = 'Low'
+        elif price_position == 'Mid-range':
+            comp_price = 'Mid'
+        else:
+            comp_price = 'Mid'  # Default
+        
+        # Determine experience score from rating (1-5 scale)
+        if rating:
+            if rating >= 4.0:
+                experience = 'High'
+            elif rating >= 3.0:
+                experience = 'Mid'
+            else:
+                experience = 'Low'
+        else:
+            experience = 'Mid'  # Default if no rating
+        
+        # Categorize into quadrants
+        if comp_price == 'High' and experience == 'High':
+            high_price_high_exp.append(name)
+        elif comp_price == 'High' and experience == 'Low':
+            high_price_low_exp.append(name)
+        elif comp_price == 'Low' and experience == 'High':
+            low_price_high_exp.append(name)
+        elif comp_price == 'Low' and experience == 'Low':
+            low_price_low_exp.append(name)
+        elif comp_price == 'Mid' and experience == 'High':
+            low_price_high_exp.append(name)  # Mid price with high exp = value
+        elif comp_price == 'Mid' and experience == 'Low':
+            low_price_low_exp.append(name)  # Mid price with low exp = budget
+        else:
+            low_price_low_exp.append(name)  # Default
+    
+    # Build matrix with actual competitor names
     matrix = f"""
 **Competitive Positioning Matrix (Price vs. Experience Quality):**
 
@@ -304,46 +348,91 @@ High Experience
 def add_verification_column_to_tables(text: str) -> str:
     """
     Automatically add Verification column to tables that lack it.
-    Fills with Verified, Estimated, or Unavailable based on context.
+    Uses a multi-level heuristic to assign verification status:
+      - 'Verified'           : row cites a known review platform or official source
+      - 'Estimated'          : row contains estimate/approximation language
+      - 'Needs verification' : row explicitly flags missing or unavailable data
+      - 'Unverified'         : default for everything else
     """
+    def _verification_status(row: str) -> str:
+        row_lower = row.lower()
+
+        # Verified: known authoritative source explicitly mentioned in the cell
+        verified_signals = [
+            'google maps', 'tripadvisor', 'yelp', 'official site',
+            'official website', 'verified',
+        ]
+        if any(signal in row_lower for signal in verified_signals):
+            return ' Verified'
+
+        # Needs verification: data explicitly flagged as absent or unknown
+        needs_verification_signals = [
+            'not available', 'n/a', 'unavailable',
+        ]
+        if any(signal in row_lower for signal in needs_verification_signals):
+            return ' Needs verification'
+        # A row whose non-empty data cells are all em-dashes signals missing data
+        data_cells = [c.strip() for c in row.split('|') if c.strip()]
+        if data_cells and all(c == '—' for c in data_cells):
+            return ' Needs verification'
+
+        # Estimated: hedging / approximation language present
+        estimated_signals = [
+            'estimated', 'approximate', 'industry average',
+            'likely', 'based on',
+        ]
+        if any(signal in row_lower for signal in estimated_signals):
+            return ' Estimated'
+        if '~' in row:
+            return ' Estimated'
+
+        # Default: data present but source unknown — do NOT claim it is verified
+        return ' Unverified'
+
     lines = text.split('\n')
     result = []
     i = 0
-    
+
     while i < len(lines):
         line = lines[i]
-        
-        # Check if this is a table header
-        if line.strip().startswith('|') and '---' in lines[i+1] if i+1 < len(lines) else False:
+
+        # Detect a table header row followed immediately by a separator row
+        if (
+            line.strip().startswith('|')
+            and i + 1 < len(lines)
+            and '---' in lines[i + 1]
+        ):
             header_cells = [cell.strip() for cell in line.split('|')]
-            
-            # Check if Verification column exists
-            has_verification = any('verification' in cell.lower() for cell in header_cells)
-            
+
+            # Guard: do not add a duplicate Verification column
+            has_verification = any(
+                'verification' in cell.lower() for cell in header_cells
+            )
+
             if not has_verification and len(header_cells) >= 2:
-                # Add Verification column to header
-                header_line = line.rstrip() + " Verification |"
-                sep_line = lines[i + 1].rstrip() + "-------------|"
-                table_lines = [header_line, sep_line]
+                # Append Verification column to header and separator
+                result.append(line.rstrip() + ' Verification |')
+                result.append(lines[i + 1].rstrip() + '-------------|')
+
+                # Process data rows
                 i += 2
-                while i < len(lines) and lines[i].strip().startswith("|") and "---" not in lines[i]:
+                while (
+                    i < len(lines)
+                    and lines[i].strip().startswith('|')
+                    and '---' not in lines[i]
+                ):
                     row = lines[i].rstrip()
-                    if "verified" in row.lower() or "google maps" in row.lower():
-                        verification = " Verified"
-                    elif "estimated" in row.lower() or "approximate" in row.lower():
-                        verification = " Estimated"
-                    else:
-                        verification = " Verified"
-                    table_lines.append(row + verification + " |")
+                    result.append(row + _verification_status(row) + ' |')
                     i += 1
                 table_block = "\n".join(table_lines)
                 table_block = validate_table_rows(table_block)
                 result.extend(table_block.split("\n"))
                 continue
-        
+            # Verification column already present — pass through unchanged
+
         result.append(line)
         i += 1
-    
+
     return '\n'.join(result)
 
 
@@ -450,10 +539,8 @@ def generate_action_plan(swot_data: str) -> str:
     """
     Generate action plan derived from SWOT recommendations with owners and timelines.
     """
-    # Extract recommendations from SWOT data
     recommendations = []
     
-    # Default recommendations if none found
     if 'recommendation' not in swot_data.lower():
         recommendations = [
             ("Implement customer loyalty program", "Marketing", "Short (1-3 months)", "20% increase in repeat visits", "High"),
@@ -463,7 +550,6 @@ def generate_action_plan(swot_data: str) -> str:
             ("Upgrade facilities for accessibility", "Operations", "Medium (3-6 months)", "Improved accessibility rating", "Medium"),
         ]
     else:
-        # Extract from SWOT (simplified)
         recommendations = [
             ("Enhance unique value propositions", "Marketing", "Short (1-3 months)", "Increased differentiation", "High"),
             ("Improve customer experience", "Operations", "Short (1-3 months)", "Higher satisfaction scores", "High"),
@@ -536,7 +622,11 @@ def synthesize_final_report(
     Enhanced with validation, new sections, and visual charts.
     """
     from .config import ENABLE_ADVANCED_SECTIONS, ENABLE_VISUAL_CHARTS
-    
+
+    # Work on local copies so the caller's dicts are never mutated.
+    report_results = {k: v for k, v in step_results.items()}
+    report_advanced = dict(advanced_sections) if advanced_sections else {}
+
     # Override review counts using shared_data if available
     if shared_data and shared_data.get("google_reviews"):
         google_reviews = shared_data["google_reviews"]
@@ -549,53 +639,36 @@ def synthesize_final_report(
             except (TypeError, ValueError):
                 continue
 
-            for section in step_results:
-                if isinstance(step_results[section], str):
-                    step_results[section] = re.sub(
+            for section in report_results:
+                if isinstance(report_results[section], str):
+                    report_results[section] = re.sub(
                         rf"{re.escape(competitor_name)}.*?(\d+)\s+reviews",
                         f"{competitor_name} {count_num} reviews",
-                        step_results[section],
+                        report_results[section],
                         flags=re.IGNORECASE,
                     )
-                    step_results[section] = re.sub(
+                    report_results[section] = re.sub(
                         rf"(\d+)\s+reviews.*?{re.escape(competitor_name)}",
                         f"{count_num} reviews ({competitor_name})",
-                        step_results[section],
+                        report_results[section],
                         flags=re.IGNORECASE,
                     )
 
     now = datetime.now().strftime("%B %d, %Y")
     
-    # Build executive summary from actual data
     competitor_count = shared_data.get('competitor_count', 0) if shared_data else 0
     
-    # Extract top praise category and percentage from feedback
-    feedback_text = step_results.get("feedback", "")
-    feedback_sentiment_chart = ""
-    pos_m = re.search(r"Positive[^:]*:\s*~?(\d+)\s*%", feedback_text, re.IGNORECASE)
-    neu_m = re.search(r"Neutral[^:]*:\s*~?(\d+)\s*%", feedback_text, re.IGNORECASE)
-    neg_m = re.search(r"Negative[^:]*:\s*~?(\d+)\s*%", feedback_text, re.IGNORECASE)
-    if pos_m and neu_m and neg_m:
-        try:
-            feedback_sentiment_chart = "\n\n" + generate_sentiment_chart(
-                float(pos_m.group(1)),
-                float(neu_m.group(1)),
-                float(neg_m.group(1)),
-            )
-        except (ValueError, TypeError):
-            feedback_sentiment_chart = ""
-    # Try multiple patterns for top praise percentage
-    top_praise_match = re.search(r"(\d+)%.*?positive", feedback_text, re.IGNORECASE)
+    feedback_text = report_results.get('feedback', '')
+    import re
+    top_praise_match = re.search(r'(\d+)%.*?positive', feedback_text, re.IGNORECASE)
     if not top_praise_match:
         top_praise_match = re.search(r'positive.*?(\d+)%', feedback_text, re.IGNORECASE)
     if not top_praise_match:
         top_praise_match = re.search(r'~(\d+)%', feedback_text, re.IGNORECASE)
     top_praise_pct = top_praise_match.group(1) if top_praise_match else "Data not available"
     
-    # Use price position from shared_data (extracted in main_modular.py)
     price_position = shared_data.get('price_position', 'Data not available') if shared_data else 'Data not available'
     
-    # Use actual competitor names from shared_data['competitor_list']
     competitor_names = []
     if shared_data and 'competitor_list' in shared_data and shared_data['competitor_list']:
         competitor_names = [comp['name'] for comp in shared_data['competitor_list'] if comp.get('name')]
@@ -616,7 +689,6 @@ Market saturation and increasing competition from established players.
 3. Optimize digital presence and local SEO
 """
     
-    # Start building report
     report = f"""# Competitor Analysis Report
 ## {company} — {domain.title()} Market
 *Generated: {now}* | *Location: {location}*
@@ -677,34 +749,33 @@ All data points are cross-verified from multiple sources. Information that could
 
 ## 3. Competitive Landscape Overview
 
-{add_verification_column_to_tables(clean_markdown(step_results.get('discovery', '*Discovery data not available from public sources*')))}
+{add_verification_column_to_tables(clean_markdown(report_results.get('discovery', '*Discovery data not available from public sources*')))}
 
 ---
 
 ## 4. Product & Feature Analysis
 
-{add_verification_column_to_tables(clean_markdown(step_results.get('product', '*Product analysis not available from public sources*')))}
+{add_verification_column_to_tables(clean_markdown(report_results.get('product', '*Product analysis not available from public sources*')))}
 
 ---
 
 ## 5. Pricing & Business Models
 
-{add_verification_column_to_tables(clean_markdown(step_results.get('pricing', '*Pricing analysis not available from public sources*')))}
+{add_verification_column_to_tables(clean_markdown(report_results.get('pricing', '*Pricing analysis not available from public sources*')))}
 
 ---
 
 ## 6. SEO & Content Strategy
 
-{add_verification_column_to_tables(clean_markdown(step_results.get('seo', '*SEO analysis not available from public sources*')))}
+{add_verification_column_to_tables(clean_markdown(report_results.get('seo', '*SEO analysis not available from public sources*')))}
 
 ---
 
 ## 7. Social Media Intelligence
 
-{add_verification_column_to_tables(clean_markdown(step_results.get('social', '*Social media analysis not available from public sources*')))}
+{add_verification_column_to_tables(clean_markdown(report_results.get('social', '*Social media analysis not available from public sources*')))}
 """
 
-    # Add YouTube data if available
     if youtube_data:
         report += "\n### YouTube Channel Data (via YouTube Data API)\n\n"
         for comp, data in youtube_data.items():
@@ -726,103 +797,76 @@ All data points are cross-verified from multiple sources. Information that could
 
 ## 8. News & Recent Developments
 
-{add_verification_column_to_tables(clean_markdown(step_results.get('news', '*News analysis not available from public sources*')))}
+{add_verification_column_to_tables(clean_markdown(report_results.get('news', '*News analysis not available from public sources*')))}
 
 ---
 
 ## 9. Customer Feedback Analysis
 
-{add_verification_column_to_tables(clean_markdown(step_results.get('feedback', '*Customer feedback not available from public sources*')))}{feedback_sentiment_chart}
+{add_verification_column_to_tables(clean_markdown(report_results.get('feedback', '*Customer feedback not available from public sources*')))}
 
 """
 
-    # Add advanced sections if enabled
     if ENABLE_ADVANCED_SECTIONS:
-        def _advanced_llm_ok(s: str) -> bool:
-            return bool(s) and "*not available*" not in s.lower() and len(s) > 100
-
-        recommendations_note = (
-            "*Recommendations synthesized from available research — validate against your own priorities.*"
-        )
-
-        research_summary = "\n\n---\n\n".join(
-            p
-            for p in (
-                step_results.get("feedback") or "",
-                step_results.get("discovery") or "",
-                step_results.get("product") or "",
-            )
-            if p
-        )[:12000]
-
         personas_content = get_advanced_section(
-            advanced_sections,
-            "personas",
-            legacy_keys=["1._customer_personas", "customer_personas"],
+            report_advanced, 'personas',
+            legacy_keys=['1._customer_personas', 'customer_personas']
         )
-        if not _advanced_llm_ok(personas_content):
-            personas_content = generate_customer_personas(research_summary)
-
+        if not personas_content or '*not available*' in personas_content.lower() or len(personas_content) < 100:
+            personas_content = "*Insufficient data - Customer personas could not be generated from available research data.*"
+        
         risk_content = get_advanced_section(
-            advanced_sections,
-            "risk",
-            legacy_keys=["2._risk_assessment", "risk_assessment"],
+            report_advanced, 'risk',
+            legacy_keys=['2._risk_assessment', 'risk_assessment']
         )
-        if not _advanced_llm_ok(risk_content):
-            risk_content = generate_risk_assessment()
-
+        if not risk_content or '*not available*' in risk_content.lower() or len(risk_content) < 100:
+            risk_content = "*Insufficient data - Risk assessment could not be generated from available research data.*"
+        
         recommendations_content = get_advanced_section(
-            advanced_sections,
-            "recommendations",
-            legacy_keys=["3._actionable_recommendations", "actionable_recommendations"],
+            report_advanced, 'recommendations',
+            legacy_keys=['3._actionable_recommendations', 'actionable_recommendations']
         )
-        if not _advanced_llm_ok(recommendations_content):
-            recommendations_content = recommendations_note
-
+        if not recommendations_content or '*not available*' in recommendations_content.lower() or len(recommendations_content) < 100:
+            recommendations_content = "*Insufficient data - Actionable recommendations could not be generated from available research data.*"
+        
         financial_content = get_advanced_section(
-            advanced_sections,
-            "financial",
-            legacy_keys=["4._financial_benchmarks", "financial_benchmarks"],
+            report_advanced, 'financial',
+            legacy_keys=['4._financial_benchmarks', 'financial_benchmarks']
         )
         if not financial_content or "*not available*" in financial_content.lower() or len(financial_content) < 100:
             financial_content = "*Insufficient data - Financial benchmarks could not be generated from available research data. Public financial information not available.*"
-
+        
         digital_ads_content = get_advanced_section(
-            advanced_sections,
-            "digital_ads",
-            legacy_keys=["5._digital_ads_paid_media", "digital_ads_paid_media"],
+            report_advanced, 'digital_ads',
+            legacy_keys=['5._digital_ads_paid_media', 'digital_ads_paid_media']
         )
         if not digital_ads_content or "*not available*" in digital_ads_content.lower() or len(digital_ads_content) < 100:
             digital_ads_content = "*Insufficient data - Digital ads analysis could not be generated from available research data.*"
-
+        
         ugc_content = get_advanced_section(
-            advanced_sections,
-            "ugc",
-            legacy_keys=["6._ugc_hashtag_analysis", "ugc_hashtag_analysis"],
+            report_advanced, 'ugc',
+            legacy_keys=['6._ugc_hashtag_analysis', 'ugc_hashtag_analysis']
         )
-        if not _advanced_llm_ok(ugc_content):
-            ugc_content = generate_ugc_hashtag_analysis(step_results.get("social", "") or "")
-
+        if not ugc_content or '*not available*' in ugc_content.lower() or len(ugc_content) < 100:
+            ugc_content = "*Insufficient data - UGC and hashtag analysis could not be generated from available research data.*"
+        
         accessibility_content = get_advanced_section(
-            advanced_sections,
-            "accessibility",
-            legacy_keys=["7._accessibility_inclusivity", "accessibility_inclusivity"],
+            report_advanced, 'accessibility',
+            legacy_keys=['7._accessibility_inclusivity', 'accessibility_inclusivity']
         )
-        if not _advanced_llm_ok(accessibility_content):
-            accessibility_content = generate_accessibility_analysis()
-
+        if not accessibility_content or '*not available*' in accessibility_content.lower() or len(accessibility_content) < 100:
+            accessibility_content = "*Insufficient data - Accessibility analysis could not be generated from available research data. Verification required from official sources.*"
+        
         seasonal_content = get_advanced_section(
-            advanced_sections,
-            "seasonal",
-            legacy_keys=["8._seasonal_trends", "seasonal_trends"],
+            report_advanced, 'seasonal',
+            legacy_keys=['8._seasonal_trends', 'seasonal_trends']
         )
-        if not _advanced_llm_ok(seasonal_content):
-            seasonal_content = generate_seasonal_heatmap()
-
+        if not seasonal_content or '*not available*' in seasonal_content.lower() or len(seasonal_content) < 100:
+            seasonal_content = "*Insufficient data - Seasonal trends could not be generated from available research data. Industry reports or local tourism data required.*"
+        
         action_plan_content = get_advanced_section(
-            advanced_sections,
-            "action_plan",
-            legacy_keys=["9._next_steps_action_plan", "next_steps_action_plan"],
+            report_advanced, 'action_plan',
+            legacy_keys=['9._next_steps_action_plan', 'next_steps_action_plan']
         )
         if not _advanced_llm_ok(action_plan_content):
             action_plan_content = generate_action_plan(step_results.get("swot", "") or "")
@@ -837,7 +881,7 @@ All data points are cross-verified from multiple sources. Information that could
 
 ## 11. SWOT Analysis & Recommendations
 
-{add_verification_column_to_tables(clean_markdown(step_results.get('swot', '*SWOT analysis not available from public sources*')))}
+{add_verification_column_to_tables(clean_markdown(report_results.get('swot', '*SWOT analysis not available from public sources*')))}
 
 ---
 
@@ -889,18 +933,16 @@ All data points are cross-verified from multiple sources. Information that could
 
 """
     else:
-        # If advanced sections disabled, include SWOT at section 10
         report += f"""---
 
 ## 10. SWOT Analysis & Recommendations
 
-{clean_markdown(step_results.get('swot', '*SWOT analysis not available from public sources*'))}
+{clean_markdown(report_results.get('swot', '*SWOT analysis not available from public sources*'))}
 
 ---
 
 """
 
-    # Add visual positioning matrix if enabled
     if ENABLE_VISUAL_CHARTS:
         report += generate_positioning_matrix(shared_data)
         report += "\n---\n\n"
