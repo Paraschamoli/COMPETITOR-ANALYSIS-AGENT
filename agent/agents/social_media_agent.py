@@ -15,7 +15,7 @@ def social_media_agent() -> Agent:
     return Agent(
         name="Social Media Intelligence Analyst",
         role="Extract social media presence and content strategy using enhanced platform access with complete data.",
-        model=agent_model(max_tokens=2500),
+        model=agent_model(max_tokens=4000),
         tools=search_tools(),  # Fallback to Serper/Tavily search
         instructions=[
             "STEP 0 — TARGET COMPANY SELF-AUDIT (do this before analyzing competitors):",
