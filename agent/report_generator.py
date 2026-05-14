@@ -146,7 +146,13 @@ def clean_markdown(text: str) -> str:
     # Fix incomplete horizontal rules
     cleaned = '\n'.join(cleaned_lines)
     cleaned = cleaned.replace('---\n', '\n---\n')
-    
+
+    # Remove orphaned numeric headings (e.g., "### 1." with no text)
+    cleaned = re.sub(r'^#{1,6}\s+\d+\.?\s*$', '', cleaned, flags=re.MULTILINE)
+
+    # Collapse three or more consecutive newlines into two newlines
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+
     return cleaned
 
 
@@ -330,10 +336,12 @@ def add_verification_column_to_tables(text: str) -> str:
                     row = lines[i].rstrip()
                     if "verified" in row.lower() or "google maps" in row.lower():
                         verification = " Verified"
-                    elif "estimated" in row.lower() or "approximate" in row.lower():
+                    elif any(term in row.lower() for term in ['estimated', 'approximate', '~', 'industry average']):
                         verification = " Estimated"
+                    elif any(marker in row.lower() for marker in ['—', 'n/a', 'not available']):
+                        verification = " Needs verification"
                     else:
-                        verification = " Verified"
+                        verification = " Unverified"
                     table_lines.append(row + verification + " |")
                     i += 1
                 table_block = "\n".join(table_lines)
@@ -537,6 +545,9 @@ def synthesize_final_report(
     """
     from .config import ENABLE_ADVANCED_SECTIONS, ENABLE_VISUAL_CHARTS
     
+    # Create shallow copy of step_results to avoid modifying original
+    report_results = {k: v for k, v in step_results.items()}
+    
     # Override review counts using shared_data if available
     if shared_data and shared_data.get("google_reviews"):
         google_reviews = shared_data["google_reviews"]
@@ -549,18 +560,18 @@ def synthesize_final_report(
             except (TypeError, ValueError):
                 continue
 
-            for section in step_results:
-                if isinstance(step_results[section], str):
-                    step_results[section] = re.sub(
+            for section in report_results:
+                if isinstance(report_results[section], str):
+                    report_results[section] = re.sub(
                         rf"{re.escape(competitor_name)}.*?(\d+)\s+reviews",
                         f"{competitor_name} {count_num} reviews",
-                        step_results[section],
+                        report_results[section],
                         flags=re.IGNORECASE,
                     )
-                    step_results[section] = re.sub(
+                    report_results[section] = re.sub(
                         rf"(\d+)\s+reviews.*?{re.escape(competitor_name)}",
                         f"{count_num} reviews ({competitor_name})",
-                        step_results[section],
+                        report_results[section],
                         flags=re.IGNORECASE,
                     )
 
@@ -570,7 +581,7 @@ def synthesize_final_report(
     competitor_count = shared_data.get('competitor_count', 0) if shared_data else 0
     
     # Extract top praise category and percentage from feedback
-    feedback_text = step_results.get("feedback", "")
+    feedback_text = report_results.get("feedback", "")
     feedback_sentiment_chart = ""
     pos_m = re.search(r"Positive[^:]*:\s*~?(\d+)\s*%", feedback_text, re.IGNORECASE)
     neu_m = re.search(r"Neutral[^:]*:\s*~?(\d+)\s*%", feedback_text, re.IGNORECASE)
@@ -677,31 +688,31 @@ All data points are cross-verified from multiple sources. Information that could
 
 ## 3. Competitive Landscape Overview
 
-{add_verification_column_to_tables(clean_markdown(step_results.get('discovery', '*Discovery data not available from public sources*')))}
+{add_verification_column_to_tables(clean_markdown(report_results.get('discovery', '*Discovery data not available from public sources*')))}
 
 ---
 
 ## 4. Product & Feature Analysis
 
-{add_verification_column_to_tables(clean_markdown(step_results.get('product', '*Product analysis not available from public sources*')))}
+{add_verification_column_to_tables(clean_markdown(report_results.get('product', '*Product analysis not available from public sources*')))}
 
 ---
 
 ## 5. Pricing & Business Models
 
-{add_verification_column_to_tables(clean_markdown(step_results.get('pricing', '*Pricing analysis not available from public sources*')))}
+{add_verification_column_to_tables(clean_markdown(report_results.get('pricing', '*Pricing analysis not available from public sources*')))}
 
 ---
 
 ## 6. SEO & Content Strategy
 
-{add_verification_column_to_tables(clean_markdown(step_results.get('seo', '*SEO analysis not available from public sources*')))}
+{add_verification_column_to_tables(clean_markdown(report_results.get('seo', '*SEO analysis not available from public sources*')))}
 
 ---
 
 ## 7. Social Media Intelligence
 
-{add_verification_column_to_tables(clean_markdown(step_results.get('social', '*Social media analysis not available from public sources*')))}
+{add_verification_column_to_tables(clean_markdown(report_results.get('social', '*Social media analysis not available from public sources*')))}
 """
 
     # Add YouTube data if available
@@ -726,13 +737,13 @@ All data points are cross-verified from multiple sources. Information that could
 
 ## 8. News & Recent Developments
 
-{add_verification_column_to_tables(clean_markdown(step_results.get('news', '*News analysis not available from public sources*')))}
+{add_verification_column_to_tables(clean_markdown(report_results.get('news', '*News analysis not available from public sources*')))}
 
 ---
 
 ## 9. Customer Feedback Analysis
 
-{add_verification_column_to_tables(clean_markdown(step_results.get('feedback', '*Customer feedback not available from public sources*')))}{feedback_sentiment_chart}
+{add_verification_column_to_tables(clean_markdown(report_results.get('feedback', '*Customer feedback not available from public sources*')))}{feedback_sentiment_chart}
 
 """
 
@@ -748,9 +759,9 @@ All data points are cross-verified from multiple sources. Information that could
         research_summary = "\n\n---\n\n".join(
             p
             for p in (
-                step_results.get("feedback") or "",
-                step_results.get("discovery") or "",
-                step_results.get("product") or "",
+                report_results.get("feedback") or "",
+                report_results.get("discovery") or "",
+                report_results.get("product") or "",
             )
             if p
         )[:12000]
@@ -801,7 +812,7 @@ All data points are cross-verified from multiple sources. Information that could
             legacy_keys=["6._ugc_hashtag_analysis", "ugc_hashtag_analysis"],
         )
         if not _advanced_llm_ok(ugc_content):
-            ugc_content = generate_ugc_hashtag_analysis(step_results.get("social", "") or "")
+            ugc_content = generate_ugc_hashtag_analysis(report_results.get("social", "") or "")
 
         accessibility_content = get_advanced_section(
             advanced_sections,
@@ -825,7 +836,7 @@ All data points are cross-verified from multiple sources. Information that could
             legacy_keys=["9._next_steps_action_plan", "next_steps_action_plan"],
         )
         if not _advanced_llm_ok(action_plan_content):
-            action_plan_content = generate_action_plan(step_results.get("swot", "") or "")
+            action_plan_content = generate_action_plan(report_results.get("swot", "") or "")
 
         report += f"""---
 
@@ -837,7 +848,7 @@ All data points are cross-verified from multiple sources. Information that could
 
 ## 11. SWOT Analysis & Recommendations
 
-{add_verification_column_to_tables(clean_markdown(step_results.get('swot', '*SWOT analysis not available from public sources*')))}
+{add_verification_column_to_tables(clean_markdown(report_results.get('swot', '*SWOT analysis not available from public sources*')))
 
 ---
 

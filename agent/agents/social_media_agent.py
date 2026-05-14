@@ -37,7 +37,7 @@ def social_media_agent() -> Agent:
             "- **Verification Status:** Mark each social media metric with: [Verified via platform], [Verified via search], or [Not publicly available].",
             "",
             "ENHANCED PLATFORM ACCESS (Agent Reach):",
-            f"Agent Reach Available: {AGENT_REACH_AVAILABLE if 'AGENT_REACH_AVAILABLE' in globals() else False}",
+            f"Agent Reach Available: {AGENT_REACH_AVAILABLE}",
             "",
             "PRIORITY PLATFORMS FOR LOCAL BUSINESSES:",
             "",

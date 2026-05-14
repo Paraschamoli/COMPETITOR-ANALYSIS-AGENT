@@ -36,7 +36,7 @@ except ImportError:
 
 # Max chars passed into downstream agents (sentence-aware); full step_results stay intact for the report.
 SWOT_CONTEXT_SECTION_MAX = 4000
-ADVANCED_CONTEXT_SECTION_MAX = 2000
+ADVANCED_CONTEXT_SECTION_MAX = 4000
 
 # Substrings (lowercase) matched against cleaned LLM headers → keys used by report_generator.py
 SECTION_KEY_MAP = {
@@ -91,28 +91,67 @@ def _collect_competitors_from_search_query(query: str, company: str) -> list[dic
     rows: list[dict] = []
     if not SEARCH_TOOLS_AVAILABLE or TavilyTools is None or SerperTools is None:
         return rows
+
+    def extract_names_from_result(result, company: str) -> list[dict]:
+        """Extract competitor names from a search result, handling various response types."""
+        extracted_rows = []
+        try:
+            # Handle string results
+            if isinstance(result, str):
+                names = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', result)
+                for name in names[:5]:
+                    row = _hit_to_competitor_row(name, company)
+                    if row:
+                        extracted_rows.append(row)
+            # Handle object results with various attributes
+            elif hasattr(result, "results"):
+                for item in result.results[:5]:
+                    if hasattr(item, "title") and item.title:
+                        row = _hit_to_competitor_row(item.title, company)
+                        if row:
+                            extracted_rows.append(row)
+            elif hasattr(result, "organic"):
+                for item in result.organic[:5]:
+                    if hasattr(item, "title") and item.title:
+                        row = _hit_to_competitor_row(item.title, company)
+                        if row:
+                            extracted_rows.append(row)
+            elif hasattr(result, "content"):
+                names = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', result.content)
+                for name in names[:5]:
+                    row = _hit_to_competitor_row(name, company)
+                    if row:
+                        extracted_rows.append(row)
+            elif hasattr(result, "text"):
+                names = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', result.text)
+                for name in names[:5]:
+                    row = _hit_to_competitor_row(name, company)
+                    if row:
+                        extracted_rows.append(row)
+        except Exception:
+            pass
+        return extracted_rows
+
     try:
         tavily_results = TavilyTools().search(query)
-        if tavily_results and hasattr(tavily_results, "results"):
-            for result in tavily_results.results[:5]:
-                if hasattr(result, "title") and result.title:
-                    row = _hit_to_competitor_row(result.title, company)
-                    if row:
-                        rows.append(row)
-            if rows:
+        new_rows = extract_names_from_result(tavily_results, company)
+        if new_rows:
+            rows.extend(new_rows)
+            print(f"  Extracted {len(new_rows)} competitor names from query: {query}")
+            if len(rows) >= 5:
                 return rows
     except Exception:
         pass
+
     try:
         serper_results = SerperTools().search(query)
-        if serper_results and hasattr(serper_results, "organic"):
-            for result in serper_results.organic[:5]:
-                if hasattr(result, "title") and result.title:
-                    row = _hit_to_competitor_row(result.title, company)
-                    if row:
-                        rows.append(row)
+        new_rows = extract_names_from_result(serper_results, company)
+        if new_rows:
+            rows.extend(new_rows)
+            print(f"  Extracted {len(new_rows)} competitor names from query: {query}")
     except Exception:
         pass
+
     return rows
 
 
@@ -168,12 +207,30 @@ def run_step(
 ) -> str:
     """Run a single agent step with error handling.
 
-    agno resolves ``{company}``, ``{domain}``, ``{location}`` in instructions from ``session_state``.
+    Explicitly formats agent instructions with {company}, {domain}, {location} placeholders.
     """
     print(f"  ⏳ {step_name}...")
     try:
+        # Fetch agent's instructions and format them explicitly
+        if hasattr(agent, 'instructions') and agent.instructions:
+            # Join instructions into a single string
+            instructions_text = "\n".join(agent.instructions)
+            # Format with explicit variable substitution
+            formatted_instructions = instructions_text.format(
+                company=company,
+                domain=domain,
+                location=location
+            )
+            # Combine formatted instructions with the prompt
+            full_prompt = f"{formatted_instructions}\n\n{prompt}"
+            print(f"[DEBUG] Prompt for {step_name}:\n{full_prompt[:200]}...")
+        else:
+            # Fallback to original prompt if no instructions
+            full_prompt = prompt
+            print(f"[DEBUG] No instructions found for {step_name}, using prompt directly")
+
         result = agent.run(
-            prompt,
+            full_prompt,
             session_state={"company": company, "domain": domain, "location": location},
         )
         content = ""
@@ -224,13 +281,10 @@ def main():
         location=location,
     )
     
-    # Extract competitor count using regex from discovery output
-    count_match = re.search(r"(\d+)\s*(?:competitors|key players)", step_results['discovery'], re.IGNORECASE)
-    
     # Parse competitor data from table rows for competitor_list
     discovery_lines = step_results['discovery'].split('\n')
     table_rows = [line for line in discovery_lines if line.strip().startswith('|') and '---' not in line]
-    
+
     competitors = []
     for row in table_rows[1:]:  # Skip header row
         if row.strip():
@@ -246,16 +300,26 @@ def main():
                 }
                 if competitor['name'] and competitor['name'] != company:
                     competitors.append(competitor)
-    
+
     shared_data['competitor_list'] = competitors
-    
-    # Set competitor_count from regex or fallback to parsed list length
-    if count_match:
-        shared_data['competitor_count'] = int(count_match.group(1))
+
+    # Count from parsed table rows
+    count_from_rows = len(competitors)
+
+    # Count from regex
+    count_match = re.search(r"(\d+)\s*(?:competitors|key players)", step_results['discovery'], re.IGNORECASE)
+    count_from_regex = int(count_match.group(1)) if count_match else 0
+
+    # Set competitor_count to max of both sources
+    if count_from_rows > 0 or count_from_regex > 0:
+        shared_data['competitor_count'] = max(count_from_rows, count_from_regex)
+        print(f"  Competitor count: {count_from_rows} from table rows, {count_from_regex} from regex → using {shared_data['competitor_count']}")
     else:
-        shared_data['competitor_count'] = len(competitors)
-    
-    print(f"  📊 Discovered {shared_data['competitor_count']} competitors (excluding {company})")
+        # Tertiary fallback: use original regex if both counts are zero
+        print(f"  ⚠️  Both table row count and regex count are zero. Using fallback regex.")
+        count_match_fallback = re.search(r"(\d+)\s*(?:competitors|key players)", step_results['discovery'], re.IGNORECASE)
+        shared_data['competitor_count'] = int(count_match_fallback.group(1)) if count_match_fallback else 0
+        print(f"  📊 Discovered {shared_data['competitor_count']} competitors (excluding {company})")
     
     # Check if discovery failed or has insufficient competitors, then use deterministic fallback
     if "Error:" in step_results["discovery"] or shared_data["competitor_count"] < 6:
@@ -558,6 +622,21 @@ Key Local Research Findings:
 - Customer Feedback: {clean_cutoff(step_results['feedback'], max_chars=SWOT_CONTEXT_SECTION_MAX)}
 - Local News & Events: {clean_cutoff(step_results['news'], max_chars=SWOT_CONTEXT_SECTION_MAX)}
 """
+
+        # Build explicit competitor ratings list for SWOT agent
+        competitor_ratings_list = []
+        for comp in shared_data.get('competitor_list', []):
+            name = comp.get('name', '')
+            if not name:
+                continue
+            rev_data = shared_data.get('google_reviews', {}).get(name, {})
+            rating = rev_data.get('rating', 'N/A')
+            count = rev_data.get('count', 'N/A')
+            competitor_ratings_list.append(f"- {name}: Rating {rating} ({count} reviews)")
+
+        if competitor_ratings_list:
+            swot_context += "\n\n**Explicit Competitor List with Ratings:**\n" + "\n".join(competitor_ratings_list)
+
         step_results["swot"] = run_step(
             "SWOT Analysis",
             swot_synthesis_agent(),
