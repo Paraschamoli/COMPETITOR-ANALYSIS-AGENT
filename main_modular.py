@@ -343,14 +343,16 @@ def run_step(
                 session_state={"company": company, "domain": domain, "location": location},
             )
             content = ""
-            if hasattr(result, "content"):
+            if hasattr(result, "content") and result.content is not None:
                 content = result.content
             elif isinstance(result, str):
                 content = result
-            else:
+            elif result is not None:
                 content = str(result)
+            else:
+                content = ""
             print(f"  ✅ {step_name} complete ({len(content)} chars)")
-            return content
+            return content if content else None
         except Exception as e:
             last_error = e
             logging.exception(f"{step_name} attempt {attempt}/{MAX_RETRIES} failed")
@@ -445,9 +447,18 @@ def main():
                     pass
 
                 try:
-                    # Validate with CompetitorProfile
+                    # Determine which column has the actual competitor name
+                    # Skip if the first column looks like a row number (pure digits)
+                    raw_name = columns[1] if len(columns) > 1 else ''
+                    if raw_name.strip().isdigit():
+                        # Try next column - table might have # column first
+                        raw_name = columns[2] if len(columns) > 2 else ''
+                    # Also skip if name is empty or just whitespace
+                    if not raw_name.strip() or raw_name.strip() == company:
+                        continue
+
                     profile = CompetitorProfile(
-                        name=columns[1] if len(columns) > 1 else '',
+                        name=raw_name,
                         address=columns[2] if len(columns) > 2 else '',
                         rating=rating_val,
                         review_count=review_count_val
