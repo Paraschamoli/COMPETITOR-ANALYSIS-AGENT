@@ -21,7 +21,7 @@ def customer_feedback_agent() -> Agent:
     return Agent(
         name="Customer Intelligence Analyst",
         role="Mine customer reviews with sentiment trends, theme clustering, and verified quotes only using Google Maps Scraper when available.",
-        model=agent_model(),
+        model=agent_model(max_tokens=4000),
         tools=tools,
         instructions=[
             "CRITICAL: You MUST perform actual web searches and verify all feedback data. DO NOT invent or hallucinate customer reviews or ratings.",
@@ -75,10 +75,6 @@ def customer_feedback_agent() -> Agent:
             "- Before analyzing, check {domain} parameter. Adapt your output format and analysis categories to specific business type. Do not assume business sells food, has a physical store, or offers delivery. Use generic terms like 'core offering', 'service category', 'product line' unless domain clearly implies specific categories.",
             "- Perform comprehensive customer feedback analysis for {company} and competitors in {domain} in {location}. Adapt your analysis to the specific business type ({domain}).",
             "- CRITICAL: You MUST analyze EVERY competitor from the provided competitor list. Loop through each competitor. Do not skip any. If a competitor has no data, mark 'No data available' and continue.",
-            "",
-            "TOKEN LIMIT:",
-            "- Your output must be under 5000 characters. Be concise but complete.",
-            "- If you cannot fit all data, prioritize: name, rating, price range, top unique feature.",
             "",
             "UNIVERSAL BUSINESS FEEDBACK SOURCES:",
             "- **Products:** Product reviews, e-commerce ratings, customer testimonials",

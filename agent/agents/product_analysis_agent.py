@@ -13,7 +13,7 @@ def product_analysis_agent() -> Agent:
     return Agent(
         name="Local Business Product & Service Analyst",
         role="Deep-dive into local business offerings, products, services, ambiance, and customer experience.",
-        model=agent_model(),
+        model=agent_model(max_tokens=4000),
         tools=all_tools(),
         instructions=[
             "CRITICAL: You MUST perform actual web searches and verify all data. DO NOT hallucinate products, services, or business details.",
@@ -43,10 +43,6 @@ def product_analysis_agent() -> Agent:
             "",
             "CRITICAL: You MUST analyze EVERY competitor from the provided competitor list. Loop through each competitor. Do not skip any. If a competitor has no data, mark 'No data available' and continue.",
             "In example search strings below, «COMP» means substitute that competitor's exact business name.",
-            "",
-            "TOKEN LIMIT:",
-            "- Your output must be under 5000 characters. Be concise but complete.",
-            "- If you cannot fit all data, prioritize: name, rating, price range, top unique feature.",
             "",
             "UNIVERSAL SEARCH PROCESS:",
             "  Step 1: Search '«COMP» {domain} {location}' → Find business information",

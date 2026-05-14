@@ -15,9 +15,16 @@ def social_media_agent() -> Agent:
     return Agent(
         name="Social Media Intelligence Analyst",
         role="Extract social media presence and content strategy using enhanced platform access with complete data.",
-        model=agent_model(),
+        model=agent_model(max_tokens=2500),
         tools=search_tools(),  # Fallback to Serper/Tavily search
         instructions=[
+            "STEP 0 — TARGET COMPANY SELF-AUDIT (do this before analyzing competitors):",
+            "  Search '{company} official website' → audit the target's own site quality",
+            "  Search '{company} Google Business Profile {location}' → audit GBP completeness",
+            "  Search '{company} Instagram {location}' → get follower count and post cadence",
+            "  Search '{company} reviews Google {location}' → get own review count and rating",
+            "  Present this as '### {company} — Self-Audit' section FIRST in your output",
+            "",
             "Before analyzing, check {domain} parameter. Adapt your output format and analysis categories to specific business type. Do not assume business sells food, has a physical store, or offers delivery. Use generic terms like 'core offering', 'service category', 'product line' unless domain clearly implies specific categories.",
             "",
             "Perform comprehensive social media analysis for {company} and competitors in {domain} in {location}. Adapt your analysis to the specific business type ({domain}).",
@@ -98,10 +105,6 @@ def social_media_agent() -> Agent:
             "- **CRITICAL:** Always complete your last sentence. Never end with a hyphen, incomplete word, or cut-off phrase. If you hit a length limit, finish the current sentence and stop.",
             "- Ensure all social media analysis is complete before finishing each competitor section",
             "- You must complete your final sentence. Never end with a hyphen, an incomplete word, or a cut-off table cell. If you reach a length limit, finish the current sentence and stop.",
-            "",
-            "TOKEN LIMIT:",
-            "- Your output must be under 5000 characters. Be concise but complete.",
-            "- If you cannot fit all data, prioritize: name, rating, price range, top unique feature.",
             "",
             "**Social Media Strategy Summary:**",
             "- [Overall approach to social media]",

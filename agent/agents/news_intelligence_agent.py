@@ -13,7 +13,7 @@ def news_intelligence_agent() -> Agent:
     return Agent(
         name="News & Market Intelligence Analyst",
         role="Track recent strategic moves, funding, product launches, and market signals.",
-        model=agent_model(),
+        model=agent_model(max_tokens=2000),
         tools=all_tools(),
         instructions=[
             "Before analyzing, check {domain} parameter. Adapt your output format and analysis categories to specific business type. Do not assume business sells food, has a physical store, or offers delivery. Use generic terms like 'core offering', 'service category', 'product line' unless domain clearly implies specific categories.",
@@ -56,9 +56,6 @@ def news_intelligence_agent() -> Agent:
             "  - Seasonal sales or promotional events",
             "  - Pop-up shops or market participation",
             "  - Local artisan collaborations",
-            "TOKEN LIMIT:",
-            "- Your output must be under 5000 characters. Be concise but complete.",
-            "- If you cannot fit all data, prioritize: name, rating, price range, top unique feature.",
             "",
             "FOR SERVICE BUSINESSES:",
             "  - New service offerings or specialties",

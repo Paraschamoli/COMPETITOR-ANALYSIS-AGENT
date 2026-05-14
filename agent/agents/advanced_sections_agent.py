@@ -13,7 +13,7 @@ def advanced_sections_agent() -> Agent:
     return Agent(
         name="Advanced Strategic Analysis Agent",
         role="Generate advanced strategic sections including customer personas, risk assessment, actionable recommendations, and financial benchmarks.",
-        model=coordinator_model(),
+        model=coordinator_model(max_tokens=5000),
         tools=[],
         instructions=[
             "Based on all the research provided, generate comprehensive advanced strategic sections for {company} in {location}.",

@@ -12,7 +12,7 @@ def swot_synthesis_agent() -> Agent:
     return Agent(
         name="Strategic SWOT Analyst",
         role="Synthesize all research into actionable SWOT analyses and strategic recommendations.",
-        model=coordinator_model(),
+        model=coordinator_model(max_tokens=2500),
         tools=[],
         instructions=[
             "Based on all the research provided, create a concise but actionable SWOT for each competitor",
@@ -36,10 +36,6 @@ def swot_synthesis_agent() -> Agent:
             "- **CRITICAL:** Always complete your last sentence. Never end with a hyphen, incomplete word, or cut-off phrase. If you hit a length limit, finish the current sentence and stop.",
             "- Ensure all SWOT analysis is complete before finishing",
             "- You must complete your final sentence. Never end with a hyphen, an incomplete word, or a cut-off table cell. If you reach a length limit, finish the current sentence and stop.",
-            "",
-            "TOKEN LIMIT:",
-            "- Your output must be under 2500 characters. Be concise.",
-            "- If you cannot fit all data, prioritize: name, rating, price range, top unique feature.",
             "",
             "PER COMPETITOR SWOT — be specific, not generic:",
             "",
