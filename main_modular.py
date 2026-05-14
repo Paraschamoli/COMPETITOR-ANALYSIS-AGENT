@@ -38,6 +38,14 @@ except ImportError:
 SWOT_CONTEXT_SECTION_MAX = 4000
 ADVANCED_CONTEXT_SECTION_MAX = 4000
 
+# Per-section overrides for SWOT context (issue #13: discovery and feedback need more chars)
+SWOT_DISCOVERY_MAX = 6000
+SWOT_PRODUCT_MAX   = 4000
+SWOT_PRICING_MAX   = 3000
+SWOT_FEEDBACK_MAX  = 4000
+SWOT_NEWS_MAX      = 2000
+SWOT_SOCIAL_MAX    = 2000
+
 # Substrings (lowercase) matched against cleaned LLM headers → keys used by report_generator.py
 SECTION_KEY_MAP = {
     "customer personas": "personas",
@@ -86,12 +94,47 @@ def _hit_to_competitor_row(title: str, company: str) -> dict | None:
     }
 
 
+def _extract_titles_from_result(result) -> list[str]:
+    """Extract title strings from whatever agno search tools actually return.
+
+    agno TavilyTools/SerperTools return a plain string (JSON-formatted or
+    prose). We handle three cases:
+      1. String  → regex-scan for "title": "..." JSON fields
+      2. List    → iterate items; each item may be a dict or have a .title attr
+      3. Object  → try .results / .organic then fall through to str()
+    """
+    titles: list[str] = []
+
+    if isinstance(result, str):
+        titles = re.findall(r'"title":\s*"([^"]+)"', result)
+
+    elif isinstance(result, list):
+        for item in result:
+            if isinstance(item, dict):
+                t = item.get("title") or item.get("name") or ""
+            else:
+                t = getattr(item, "title", "") or getattr(item, "name", "") or ""
+            if t:
+                titles.append(str(t))
+
+    else:
+        # Object with sub-collections (legacy path — kept as safe fallback)
+        sub = getattr(result, "results", None) or getattr(result, "organic", None)
+        if sub:
+            return _extract_titles_from_result(sub)
+        # Last resort: stringify and regex-scan
+        titles = re.findall(r'"title":\s*"([^"]+)"', str(result))
+
+    return titles
+
+
 def _collect_competitors_from_search_query(query: str, company: str) -> list[dict]:
     """Run Tavily then Serper for one query; return competitor dict rows from result titles."""
     rows: list[dict] = []
     if not SEARCH_TOOLS_AVAILABLE or TavilyTools is None or SerperTools is None:
         return rows
 
+<<<<<<< HEAD
     def extract_names_from_result(result, company: str) -> list[dict]:
         """Extract competitor names from a search result, handling various response types."""
         extracted_rows = []
@@ -151,6 +194,34 @@ def _collect_competitors_from_search_query(query: str, company: str) -> list[dic
             print(f"  Extracted {len(new_rows)} competitor names from query: {query}")
     except Exception:
         pass
+=======
+    # ── Tavily ────────────────────────────────────────────────────────────────
+    try:
+        tavily_raw = TavilyTools().search(query)
+        titles = _extract_titles_from_result(tavily_raw)[:5]
+        for title in titles:
+            row = _hit_to_competitor_row(title, company)
+            if row:
+                rows.append(row)
+        if rows:
+            print(f"     Tavily extracted {len(rows)} names for: {query}")
+            return rows
+    except Exception as e:
+        print(f"     ⚠️  Tavily failed ({e}); trying Serper...")
+
+    # ── Serper (fallback) ─────────────────────────────────────────────────────
+    try:
+        serper_raw = SerperTools().search(query)
+        titles = _extract_titles_from_result(serper_raw)[:5]
+        for title in titles:
+            row = _hit_to_competitor_row(title, company)
+            if row:
+                rows.append(row)
+        if rows:
+            print(f"     Serper extracted {len(rows)} names for: {query}")
+    except Exception as e:
+        print(f"     ⚠️  Serper failed ({e})")
+>>>>>>> bdde1d30d86514827621cd8a7543a8b8907ac548
 
     return rows
 
@@ -186,10 +257,10 @@ def banner(args):
     # Local business capabilities
     print("  📍 Local Focus: Google Maps, local reviews, community engagement")
     print("  🏪 Business Types: Cafes, restaurants, bars, shops, services")
-    print("  � Platforms: Google, Yelp, TripAdvisor, Instagram, Facebook")
+    print("  📱 Platforms: Google, Yelp, TripAdvisor, Instagram, Facebook")
     
     if AGENT_REACH_AVAILABLE:
-        print("  � Enhanced Platform Access: Social media insights")
+        print("  📊 Enhanced Platform Access: Social media insights")
     else:
         print("  ⚠️  To enable enhanced platform access:")
         print("       Install: https://raw.githubusercontent.com/Panniantong/agent-reach/main/docs/install.md")
@@ -205,10 +276,14 @@ def run_step(
     domain: str,
     location: str,
 ) -> str:
+<<<<<<< HEAD
     """Run a single agent step with error handling.
 
     Explicitly formats agent instructions with {company}, {domain}, {location} placeholders.
     """
+=======
+    """Run a single agent step with error handling."""
+>>>>>>> bdde1d30d86514827621cd8a7543a8b8907ac548
     print(f"  ⏳ {step_name}...")
     try:
         # Fetch agent's instructions and format them explicitly
@@ -280,18 +355,31 @@ def main():
         domain=domain,
         location=location,
     )
+<<<<<<< HEAD
     
     # Parse competitor data from table rows for competitor_list
     discovery_lines = step_results['discovery'].split('\n')
     table_rows = [line for line in discovery_lines if line.strip().startswith('|') and '---' not in line]
 
+=======
+
+    # ── FIX #14: Reliable competitor counting ────────────────────────────────
+    # Primary: count actual data rows in the discovery markdown table
+    discovery_lines = step_results['discovery'].split('\n')
+    table_lines = [
+        l for l in discovery_lines
+        if l.strip().startswith('|') and '---' not in l and l.strip() != '|'
+    ]
+    # Subtract 1 for the header row
+    row_count = max(0, len(table_lines) - 1)
+
+    # Parse competitor structs from those same table rows (used by downstream steps)
+>>>>>>> bdde1d30d86514827621cd8a7543a8b8907ac548
     competitors = []
-    for row in table_rows[1:]:  # Skip header row
+    for row in table_lines[1:]:  # skip header
         if row.strip():
             columns = [col.strip() for col in row.split('|')]
             if len(columns) >= 5:
-                # Extract name, address, rating, review count from table columns
-                # Assuming table format: | Name | Address | Rating | Review Count | ... |
                 competitor = {
                     'name': columns[1] if len(columns) > 1 else '',
                     'address': columns[2] if len(columns) > 2 else '',
@@ -303,6 +391,7 @@ def main():
 
     shared_data['competitor_list'] = competitors
 
+<<<<<<< HEAD
     # Count from parsed table rows
     count_from_rows = len(competitors)
 
@@ -321,6 +410,28 @@ def main():
         shared_data['competitor_count'] = int(count_match_fallback.group(1)) if count_match_fallback else 0
         print(f"  📊 Discovered {shared_data['competitor_count']} competitors (excluding {company})")
     
+=======
+    # Secondary: count from parsed list (catches rows that may have been filtered above)
+    list_count = len([c for c in competitors if c.get('name') and c['name'] != company])
+
+    # Tertiary fallback: original regex (only when both primary counts are 0)
+    regex_count = 0
+    if row_count == 0 and list_count == 0:
+        count_match = re.search(r"(\d+)\s*(?:competitors|key players)", step_results['discovery'], re.IGNORECASE)
+        if count_match:
+            regex_count = int(count_match.group(1))
+
+    # Use the most reliable signal available
+    if row_count > 0 or list_count > 0:
+        shared_data['competitor_count'] = max(row_count, list_count)
+        print(f"  📊 Competitor count via: {'table rows' if row_count >= list_count else 'list parsing'}")
+    else:
+        shared_data['competitor_count'] = regex_count
+        print(f"  📊 Competitor count via: regex fallback")
+
+    print(f"  📊 Discovered {shared_data['competitor_count']} competitors (excluding {company})")
+
+>>>>>>> bdde1d30d86514827621cd8a7543a8b8907ac548
     # Check if discovery failed or has insufficient competitors, then use deterministic fallback
     if "Error:" in step_results["discovery"] or shared_data["competitor_count"] < 6:
         print("  🔄 Discovery failed or insufficient competitors. Running deterministic fallback...")
@@ -334,7 +445,6 @@ def main():
                     f"  ⚠️  Only {len(competitors)} real competitors found. Report will cover available competitors only."
                 )
         else:
-            # Seed with any real rows parsed from discovery before enriching via search
             fallback_competitors: list[dict] = [dict(c) for c in competitors]
             search_queries = [
                 f"{domain} near {location}",
@@ -383,8 +493,8 @@ def main():
             shared_data["competitor_list"] = unique_competitors
             shared_data["competitor_count"] = len(unique_competitors)
             print(f"  📊 Fallback enriched list: {shared_data['competitor_count']} competitors (real names only)")
-    
-    # Build structured competitor list from shared_data for explicit injection into prompts
+
+    # Build structured competitor list for explicit injection into prompts
     competitor_names = [comp["name"] for comp in shared_data["competitor_list"] if comp.get("name")]
     competitor_list_str = "\n".join(f"- {name}" for name in competitor_names)
     if competitor_names:
@@ -421,75 +531,21 @@ def main():
     
     # Extract target company's price position only from its own section (not whole pricing doc)
     pricing_text = step_results["pricing"]
-    price_position = "Mid-range"
-    company_section = re.search(
-        rf"(?:###|##)\s*{re.escape(company)}.*?(?=(?:###|##)\s|\Z)",
-        pricing_text,
-        re.DOTALL | re.IGNORECASE,
-    )
-    scan_text = company_section.group(0) if company_section else pricing_text[:500]
-
-    pos_match = re.search(r"Overall Price Position[:\s]+([^\n]+)", scan_text, re.IGNORECASE)
-    if pos_match:
-        raw = pos_match.group(1).lower()
-        if "premium" in raw or "€€€" in raw:
-            price_position = "Premium"
-        elif "mid" in raw or "€€" in raw:
-            price_position = "Mid-range"
-        elif "budget" in raw or "€" in raw:
-            price_position = "Budget"
-    else:
-        if "€€€" in scan_text:
-            price_position = "Premium"
-        elif "€€" in scan_text and "€€€" not in scan_text:
-            price_position = "Mid-range"
-        elif "€" in scan_text and "€€" not in scan_text:
-            price_position = "Budget"
-        else:
-            sl = scan_text.lower()
-            if "premium" in sl:
-                price_position = "Premium"
-            elif "mid-range" in sl or "mid range" in sl:
-                price_position = "Mid-range"
-            elif "budget" in sl or "low-cost" in sl:
-                price_position = "Budget"
-            else:
-                price_position = "Mid-range"
-
-    shared_data["price_position"] = price_position
-    print(f"  💰 Price position ({company}): {price_position}")
-
-    # Per-competitor price tier for positioning matrix (High / Mid / Low)
-    per_competitor_prices: dict[str, str] = {}
-    for comp in shared_data["competitor_list"]:
-        name = (comp.get("name") or "").strip()
-        if not name:
-            continue
-        comp_section = re.search(
-            rf"###\s*{re.escape(name)}.*?(?=###|\Z)",
-            pricing_text,
-            re.DOTALL | re.IGNORECASE,
-        )
-        if not comp_section:
-            comp_section = re.search(
-                rf"##\s*{re.escape(name)}.*?(?=(?:###|##)\s|\Z)",
-                pricing_text,
-                re.DOTALL | re.IGNORECASE,
-            )
-        if comp_section:
-            text = comp_section.group(0)
-            tl = text.lower()
-            if "€€€" in text or "premium" in tl:
-                per_competitor_prices[name] = "High"
-            elif ("€€" in text and "€€€" not in text) or "mid-range" in tl or "mid range" in tl:
-                per_competitor_prices[name] = "Mid"
-            elif ("€" in text and "€€" not in text) or "budget" in tl:
-                per_competitor_prices[name] = "Low"
-            else:
-                per_competitor_prices[name] = "Mid"
-        else:
-            per_competitor_prices[name] = "Mid"
-    shared_data["per_competitor_prices"] = per_competitor_prices
+    price_position = "Data not available"
+    if '€€€' in pricing_text:
+        price_position = "Premium"
+    elif '€€' in pricing_text:
+        price_position = "Mid-range"
+    elif '€' in pricing_text:
+        price_position = "Budget"
+    elif 'premium' in pricing_text.lower():
+        price_position = "Premium"
+    elif 'mid-range' in pricing_text.lower() or 'mid range' in pricing_text.lower():
+        price_position = "Mid-range"
+    elif 'budget' in pricing_text.lower() or 'low-cost' in pricing_text.lower():
+        price_position = "Budget"
+    shared_data['price_position'] = price_position
+    print(f"  💰 Price position: {price_position}")
 
     # ── Step 4: Local SEO & Content ────────────────────────────────────────────────
     print("\n🔍 Step 4/7: Local SEO & Content Strategy")
@@ -519,9 +575,8 @@ def main():
     # YouTube API supplement (if configured)
     if YOUTUBE_AVAILABLE and not args.skip_youtube:
         print("  🎬 Fetching YouTube stats via API...")
-        # Get competitors from discovery (simplified — extract company names)
         key_competitors = competitors_seed.split(",") + [company]
-        for comp in key_competitors[:5]:  # Limit to avoid quota
+        for comp in key_competitors[:5]:
             comp = comp.strip()
             if comp:
                 youtube_data[comp] = get_youtube_channel_stats(comp)
@@ -553,13 +608,10 @@ def main():
     )
     
     # Extract Google review counts and ratings from feedback output
-    import re
     import json
     feedback_text = step_results['feedback']
     
-    # First, try to extract from Google Maps Scraper JSON output
     if GOOGLE_MAPS_SCRAPER_AVAILABLE:
-        # Look for JSON blocks in the output
         json_pattern = r'\{[^{}]*"review_count"[^{}]*\}'
         for match in re.finditer(json_pattern, feedback_text):
             try:
@@ -572,28 +624,21 @@ def main():
             except json.JSONDecodeError:
                 continue
     
-    # Fallback: extract from text using regex (handles search tool fallback)
-    # Pattern for "X.X/5 (N reviews)" or "X.X stars N reviews"
     rating_count_pattern = r'([A-Za-z\s]+?)[\s:]+(\d+\.?\d*)[/\s]*(?:5|stars)[\s\(\)]+(\d+)\s+reviews'
     for match in re.finditer(rating_count_pattern, feedback_text, re.IGNORECASE):
         competitor_name = match.group(1).strip()
         rating = float(match.group(2))
         review_count = int(match.group(3))
-        # Only add if not already extracted from scraper
         if competitor_name not in shared_data['google_reviews']:
             shared_data['google_reviews'][competitor_name] = {'rating': rating, 'count': review_count}
     
-    # Additional fallback: extract rating and count separately if combined pattern doesn't match
     for competitor in shared_data['competitor_list']:
         competitor_name = competitor['name']
         if competitor_name not in shared_data['google_reviews']:
-            # Try to find rating for this competitor
             rating_match = re.search(rf'{re.escape(competitor_name)}[^\n]*?(\d+\.?\d*)[/\s]*(?:5|stars)', feedback_text, re.IGNORECASE)
-            count_match = re.search(rf'{re.escape(competitor_name)}[^\n]*?(\d+)\s+reviews', feedback_text, re.IGNORECASE)
-            
+            count_match_fb = re.search(rf'{re.escape(competitor_name)}[^\n]*?(\d+)\s+reviews', feedback_text, re.IGNORECASE)
             rating = float(rating_match.group(1)) if rating_match else None
-            count = int(count_match.group(1)) if count_match else None
-            
+            count = int(count_match_fb.group(1)) if count_match_fb else None
             if rating or count:
                 shared_data['google_reviews'][competitor_name] = {'rating': rating, 'count': count}
     
@@ -602,25 +647,35 @@ def main():
     # ── SWOT Synthesis ────────────────────────────────────────────────
     print("\n🎯 Bonus: SWOT Analysis & Strategic Recommendations")
     
-    # Guard: Check if competitor discovery succeeded
     competitor_count = shared_data.get('competitor_count')
     competitor_list = shared_data.get('competitor_list')
-    
-    # Check that competitor_count is an integer and > 0, and competitor_list is non-empty
-    if not isinstance(competitor_count, int) or competitor_count is None or competitor_count <= 0 or not competitor_list or (isinstance(competitor_list, list) and len(competitor_list) == 0):
+
+    # Guard: skip only when there is truly no competitor data
+    if not competitor_count or not competitor_list:
         step_results["swot"] = "Insufficient data for SWOT analysis – competitor discovery failed."
         print("  ⚠️  SWOT analysis skipped due to insufficient competitor data")
     else:
+        # ── FIX #13: inject competitor names list + larger context slices ────
+        competitor_list_for_swot = '\n'.join(
+            f"- {c['name']} (rating: {c.get('rating', 'N/A')})"
+            for c in shared_data['competitor_list']
+            if c.get('name')
+        )
+
         swot_context = f"""
 Business: {company} | Type: {domain} | Location: {location}
 Competitor Count: {shared_data['competitor_count']}
 
+Competitors to include in SWOT (you MUST generate a SWOT table for EACH one):
+{competitor_list_for_swot}
+
 Key Local Research Findings:
-- Local Competitor Discovery: {clean_cutoff(step_results['discovery'], max_chars=SWOT_CONTEXT_SECTION_MAX)}
-- Product & Service Analysis: {clean_cutoff(step_results['product'], max_chars=SWOT_CONTEXT_SECTION_MAX)}
-- Pricing & Business Model: {clean_cutoff(step_results['pricing'], max_chars=SWOT_CONTEXT_SECTION_MAX)}
-- Customer Feedback: {clean_cutoff(step_results['feedback'], max_chars=SWOT_CONTEXT_SECTION_MAX)}
-- Local News & Events: {clean_cutoff(step_results['news'], max_chars=SWOT_CONTEXT_SECTION_MAX)}
+- Local Competitor Discovery: {clean_cutoff(step_results['discovery'], max_chars=SWOT_DISCOVERY_MAX)}
+- Product & Service Analysis: {clean_cutoff(step_results['product'], max_chars=SWOT_PRODUCT_MAX)}
+- Pricing & Business Model: {clean_cutoff(step_results['pricing'], max_chars=SWOT_PRICING_MAX)}
+- Customer Feedback: {clean_cutoff(step_results['feedback'], max_chars=SWOT_FEEDBACK_MAX)}
+- Local News & Events: {clean_cutoff(step_results['news'], max_chars=SWOT_NEWS_MAX)}
+- Social Media: {clean_cutoff(step_results['social'], max_chars=SWOT_SOCIAL_MAX)}
 """
 
         # Build explicit competitor ratings list for SWOT agent
@@ -671,7 +726,6 @@ Complete Research Summary:
             domain=domain,
             location=location,
         )
-        # Parse the advanced result into sections (headers → canonical keys via SECTION_KEY_MAP)
         sections = {}
         current_section = None
         current_content = []
