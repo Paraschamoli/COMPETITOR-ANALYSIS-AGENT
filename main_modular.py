@@ -134,71 +134,18 @@ def _collect_competitors_from_search_query(query: str, company: str) -> list[dic
     if not SEARCH_TOOLS_AVAILABLE or TavilyTools is None or SerperTools is None:
         return rows
 
-<<<<<<< HEAD
-    def extract_names_from_result(result, company: str) -> list[dict]:
-        """Extract competitor names from a search result, handling various response types."""
-        extracted_rows = []
-        try:
-            # Handle string results
-            if isinstance(result, str):
-                names = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', result)
-                for name in names[:5]:
-                    row = _hit_to_competitor_row(name, company)
-                    if row:
-                        extracted_rows.append(row)
-            # Handle object results with various attributes
-            elif hasattr(result, "results"):
-                for item in result.results[:5]:
-                    if hasattr(item, "title") and item.title:
-                        row = _hit_to_competitor_row(item.title, company)
-                        if row:
-                            extracted_rows.append(row)
-            elif hasattr(result, "organic"):
-                for item in result.organic[:5]:
-                    if hasattr(item, "title") and item.title:
-                        row = _hit_to_competitor_row(item.title, company)
-                        if row:
-                            extracted_rows.append(row)
-            elif hasattr(result, "content"):
-                names = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', result.content)
-                for name in names[:5]:
-                    row = _hit_to_competitor_row(name, company)
-                    if row:
-                        extracted_rows.append(row)
-            elif hasattr(result, "text"):
-                names = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', result.text)
-                for name in names[:5]:
-                    row = _hit_to_competitor_row(name, company)
-                    if row:
-                        extracted_rows.append(row)
-        except Exception:
-            pass
-        return extracted_rows
+    from agno.agent import Agent
+    from agent.models import agent_model
 
-    try:
-        tavily_results = TavilyTools().search(query)
-        new_rows = extract_names_from_result(tavily_results, company)
-        if new_rows:
-            rows.extend(new_rows)
-            print(f"  Extracted {len(new_rows)} competitor names from query: {query}")
-            if len(rows) >= 5:
-                return rows
-    except Exception:
-        pass
-
-    try:
-        serper_results = SerperTools().search(query)
-        new_rows = extract_names_from_result(serper_results, company)
-        if new_rows:
-            rows.extend(new_rows)
-            print(f"  Extracted {len(new_rows)} competitor names from query: {query}")
-    except Exception:
-        pass
-=======
     # ── Tavily ────────────────────────────────────────────────────────────────
     try:
-        tavily_raw = TavilyTools().search(query)
-        titles = _extract_titles_from_result(tavily_raw)[:5]
+        tavily_agent = Agent(
+            tools=[TavilyTools()],
+            model=agent_model(),
+            instructions=[f"Search for: {query}. Return only business names, one per line."],
+        )
+        tavily_result = tavily_agent.run(f"Search for: {query}")
+        titles = _extract_titles_from_result(tavily_result)[:5]
         for title in titles:
             row = _hit_to_competitor_row(title, company)
             if row:
@@ -211,8 +158,13 @@ def _collect_competitors_from_search_query(query: str, company: str) -> list[dic
 
     # ── Serper (fallback) ─────────────────────────────────────────────────────
     try:
-        serper_raw = SerperTools().search(query)
-        titles = _extract_titles_from_result(serper_raw)[:5]
+        serper_agent = Agent(
+            tools=[SerperTools()],
+            model=agent_model(),
+            instructions=[f"Search for: {query}. Return only business names, one per line."],
+        )
+        serper_result = serper_agent.run(f"Search for: {query}")
+        titles = _extract_titles_from_result(serper_result)[:5]
         for title in titles:
             row = _hit_to_competitor_row(title, company)
             if row:
@@ -221,7 +173,6 @@ def _collect_competitors_from_search_query(query: str, company: str) -> list[dic
             print(f"     Serper extracted {len(rows)} names for: {query}")
     except Exception as e:
         print(f"     ⚠️  Serper failed ({e})")
->>>>>>> bdde1d30d86514827621cd8a7543a8b8907ac548
 
     return rows
 
@@ -276,14 +227,10 @@ def run_step(
     domain: str,
     location: str,
 ) -> str:
-<<<<<<< HEAD
     """Run a single agent step with error handling.
 
     Explicitly formats agent instructions with {company}, {domain}, {location} placeholders.
     """
-=======
-    """Run a single agent step with error handling."""
->>>>>>> bdde1d30d86514827621cd8a7543a8b8907ac548
     print(f"  ⏳ {step_name}...")
     try:
         # Fetch agent's instructions and format them explicitly
@@ -355,13 +302,6 @@ def main():
         domain=domain,
         location=location,
     )
-<<<<<<< HEAD
-    
-    # Parse competitor data from table rows for competitor_list
-    discovery_lines = step_results['discovery'].split('\n')
-    table_rows = [line for line in discovery_lines if line.strip().startswith('|') and '---' not in line]
-
-=======
 
     # ── FIX #14: Reliable competitor counting ────────────────────────────────
     # Primary: count actual data rows in the discovery markdown table
@@ -374,7 +314,6 @@ def main():
     row_count = max(0, len(table_lines) - 1)
 
     # Parse competitor structs from those same table rows (used by downstream steps)
->>>>>>> bdde1d30d86514827621cd8a7543a8b8907ac548
     competitors = []
     for row in table_lines[1:]:  # skip header
         if row.strip():
@@ -391,26 +330,6 @@ def main():
 
     shared_data['competitor_list'] = competitors
 
-<<<<<<< HEAD
-    # Count from parsed table rows
-    count_from_rows = len(competitors)
-
-    # Count from regex
-    count_match = re.search(r"(\d+)\s*(?:competitors|key players)", step_results['discovery'], re.IGNORECASE)
-    count_from_regex = int(count_match.group(1)) if count_match else 0
-
-    # Set competitor_count to max of both sources
-    if count_from_rows > 0 or count_from_regex > 0:
-        shared_data['competitor_count'] = max(count_from_rows, count_from_regex)
-        print(f"  Competitor count: {count_from_rows} from table rows, {count_from_regex} from regex → using {shared_data['competitor_count']}")
-    else:
-        # Tertiary fallback: use original regex if both counts are zero
-        print(f"  ⚠️  Both table row count and regex count are zero. Using fallback regex.")
-        count_match_fallback = re.search(r"(\d+)\s*(?:competitors|key players)", step_results['discovery'], re.IGNORECASE)
-        shared_data['competitor_count'] = int(count_match_fallback.group(1)) if count_match_fallback else 0
-        print(f"  📊 Discovered {shared_data['competitor_count']} competitors (excluding {company})")
-    
-=======
     # Secondary: count from parsed list (catches rows that may have been filtered above)
     list_count = len([c for c in competitors if c.get('name') and c['name'] != company])
 
@@ -431,7 +350,6 @@ def main():
 
     print(f"  📊 Discovered {shared_data['competitor_count']} competitors (excluding {company})")
 
->>>>>>> bdde1d30d86514827621cd8a7543a8b8907ac548
     # Check if discovery failed or has insufficient competitors, then use deterministic fallback
     if "Error:" in step_results["discovery"] or shared_data["competitor_count"] < 6:
         print("  🔄 Discovery failed or insufficient competitors. Running deterministic fallback...")
