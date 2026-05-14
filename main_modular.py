@@ -286,28 +286,28 @@ def parse_args():
 def banner(args):
     w = 80
     print("\n" + "═" * w)
-    print("  🔍  LOCAL BUSINESS COMPETITOR ANALYSIS AGENT")
+    print("  LOCAL BUSINESS COMPETITOR ANALYSIS AGENT")
     print("═" * w)
     print(f"  Business       : {args.company}")
     print(f"  Type           : {args.domain}")
     print(f"  Location       : {args.location}")
     print(f"  Competitors    : {args.initial_competitors}")
     print(f"  Models         : {COORDINATOR_MODEL} / {AGENT_MODEL}")
-    print(f"  Crawl4AI       : {'✅ Available' if CRAWL4AI_AVAILABLE else '❌ Not installed'}")
-    print(f"  Agent Reach    : {'✅ Available' if AGENT_REACH_AVAILABLE else '❌ Not installed'}")
-    print(f"  Google Maps Scraper : {'✅ Available' if GOOGLE_MAPS_SCRAPER_AVAILABLE else '❌ Not available (Docker required)'}")
-    print(f"  Advanced Sects : {'✅ Enabled' if ENABLE_ADVANCED_SECTIONS else '❌ Disabled (set ENABLE_ADVANCED_SECTIONS=true)'}")
+    print("  Crawl4AI       : {'[+] Available' if CRAWL4AI_AVAILABLE else '[-] Not installed'}")
+    print(f"  Agent Reach    : {'[+] Available' if AGENT_REACH_AVAILABLE else '[-] Not installed'}")
+    print(f"  Google Maps Scraper : {'[+] Available' if GOOGLE_MAPS_SCRAPER_AVAILABLE else '[-] Not available (Docker required)'}")
+    print(f"  Advanced Sects : {'[+] Enabled' if ENABLE_ADVANCED_SECTIONS else '[-] Disabled (set ENABLE_ADVANCED_SECTIONS=true)'}")
     print("═" * w)
     
     # Local business capabilities
-    print(f"  📍 Analysis target: {args.domain.title()} in {args.location}")
-    print(f"  🏢 Target business: {args.company}")
-    print("  📱 Platforms: Google, Yelp, TripAdvisor, Instagram, Facebook")
-    
+    print(f"  Target: {args.domain.title()} in {args.location}")
+    print(f"  Business: {args.company}")
+    print("  Platforms: Google, Yelp, TripAdvisor, Instagram, Facebook")
+
     if AGENT_REACH_AVAILABLE:
-        print("  📊 Enhanced Platform Access: Social media insights")
+        print("  Social media insights via Agent Reach")
     else:
-        print("  ⚠️  To enable enhanced platform access:")
+        print("  [!] Enhanced platform access not enabled")
         print("       Install: https://raw.githubusercontent.com/Panniantong/agent-reach/main/docs/install.md")
     print("\n")
 
@@ -330,7 +330,7 @@ def run_step(
     MAX_RETRIES = 3
     RETRY_DELAY = 5  # seconds, doubled on each retry
 
-    print(f"  ⏳ {step_name}...")
+    print(f"  Running: {step_name}...")
     last_error = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -351,17 +351,17 @@ def run_step(
                 content = str(result)
             else:
                 content = ""
-            print(f"  ✅ {step_name} complete ({len(content)} chars)")
+            print(f"  [+] {step_name} complete ({len(content)} chars)")
             return content if content else None
         except Exception as e:
             last_error = e
             logging.exception(f"{step_name} attempt {attempt}/{MAX_RETRIES} failed")
             if attempt < MAX_RETRIES:
                 wait = RETRY_DELAY * attempt
-                print(f"  ⏳ Retrying {step_name} in {wait}s (attempt {attempt+1}/{MAX_RETRIES})...")
+                print(f"  [!] Retrying {step_name} in {wait}s (attempt {attempt+1}/{MAX_RETRIES})...")
                 time.sleep(wait)
 
-    print(f"  ❌ {step_name} failed after {MAX_RETRIES} attempts: {last_error}")
+    print(f"  [-] {step_name} failed after {MAX_RETRIES} attempts: {last_error}")
     return None
 
 
@@ -395,7 +395,7 @@ def main():
     }
 
     # ── Step 1: Competitor Discovery ──────────────────────────────────────────
-    print("\n📋 Step 1/7: Local Competitor Discovery")
+    print("\nStep 1/7: Local Competitor Discovery")
     _result = run_step(
         "Local Competitor Discovery",
         competitor_discovery_agent(),
@@ -408,7 +408,7 @@ def main():
     )
     if _result is None:
         step_results["discovery"] = ""
-        print("  ⚠️  Discovery skipped — using empty placeholder")
+        print("  [!] Discovery skipped -- using empty placeholder")
     else:
         step_results["discovery"] = _result
 
@@ -502,7 +502,7 @@ def main():
     # Use the most reliable signal available
     if row_count > 0 or list_count > 0:
         shared_data['competitor_count'] = max(row_count, list_count)
-        print(f"  📊 Competitor count via: {'table rows' if row_count >= list_count else 'list parsing'}")
+        print(f"  [!] Competitor count via: {'table rows' if row_count >= list_count else 'list parsing'}")
     else:
         shared_data['competitor_count'] = regex_count
         print(f"  📊 Competitor count via: regex fallback")

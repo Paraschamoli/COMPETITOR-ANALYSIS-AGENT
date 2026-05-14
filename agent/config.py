@@ -29,7 +29,7 @@ try:
     CRAWL4AI_AVAILABLE = True
 except ImportError:
     CRAWL4AI_AVAILABLE = False
-    print("⚠️  crawl4ai not installed. Using Firecrawl only. Run: pip install crawl4ai && crawl4ai-setup")
+    print("[!] crawl4ai not installed. Using Firecrawl only. Run: pip install crawl4ai && crawl4ai-setup")
 
 # Optional: Agent Reach (enhanced platform access)
 try:
@@ -87,13 +87,13 @@ try:
     
     AGENT_REACH_AVAILABLE = check_agent_reach()
     if AGENT_REACH_AVAILABLE:
-        print("✅ Agent Reach available - enhanced platform access enabled")
+        print("[+] Agent Reach available - enhanced platform access enabled")
     else:
-        print("⚠️  Agent Reach not available. Install: https://raw.githubusercontent.com/Panniantong/agent-reach/main/docs/install.md")
+        print("[!] Agent Reach not available. Install: https://raw.githubusercontent.com/Panniantong/agent-reach/main/docs/install.md")
         
 except ImportError:
     AGENT_REACH_AVAILABLE = False
-    print("⚠️  Agent Reach integration disabled")
+    print("[!] Agent Reach integration disabled")
 
 # Optional: YouTube Data API (free — 10,000 units/day)
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
@@ -102,7 +102,7 @@ try:
     YOUTUBE_AVAILABLE = bool(YOUTUBE_API_KEY)
 except ImportError:
     YOUTUBE_AVAILABLE = False
-    print("⚠️  google-api-python-client not installed. YouTube analysis will use search fallback.")
+    print("[!] google-api-python-client not installed. YouTube analysis will use search fallback.")
 
 # Optional: Google Maps Scraper (via Docker)
 # Set ENABLE_GOOGLE_MAPS_SCRAPER=true in .env to enable
@@ -121,15 +121,15 @@ if GOOGLE_MAPS_SCRAPER_AVAILABLE:
                 return False
         
         if check_docker():
-            print("✅ Google Maps Scraper integration enabled (Docker available)")
+            print("[+] Google Maps Scraper integration enabled (Docker available)")
         else:
-            print("❌ Google Maps Scraper requested but Docker not available. Disabling.")
+            print("[-] Google Maps Scraper requested but Docker not available. Disabling.")
             GOOGLE_MAPS_SCRAPER_AVAILABLE = False
     except Exception:
-        print("❌ Docker check failed. Google Maps Scraper disabled.")
+        print("[-] Docker check failed. Google Maps Scraper disabled.")
         GOOGLE_MAPS_SCRAPER_AVAILABLE = False
 else:
-    print("⚠️  Google Maps Scraper disabled. Set ENABLE_GOOGLE_MAPS_SCRAPER=true in .env to enable.")
+    print("[!] Google Maps Scraper disabled. Set ENABLE_GOOGLE_MAPS_SCRAPER=true in .env to enable.")
 
 # Advanced Features Configuration
 # Toggle advanced report sections (Methodology, Personas, Risk, etc.)
