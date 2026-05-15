@@ -11,17 +11,6 @@ import argparse
 import logging
 import re
 import time
-import sys
-import io
-
-# Fix Windows console Unicode encoding issues
-if sys.platform == "win32":
-    try:
-        sys.stdout.reconfigure(encoding='utf-8')
-        sys.stderr.reconfigure(encoding='utf-8')
-    except Exception:
-        pass
-
 from agent.config import (
     COORDINATOR_MODEL, AGENT_MODEL, CRAWL4AI_AVAILABLE,
     AGENT_REACH_AVAILABLE, YOUTUBE_AVAILABLE, ENABLE_ADVANCED_SECTIONS, GOOGLE_MAPS_SCRAPER_AVAILABLE
@@ -49,20 +38,20 @@ except ImportError:
     SEARCH_TOOLS_AVAILABLE = False
 
 # Max chars passed into downstream agents (sentence-aware); full step_results stay intact for the report.
-SWOT_CONTEXT_SECTION_MAX = 10000
-ADVANCED_CONTEXT_SECTION_MAX = 8000
+SWOT_CONTEXT_SECTION_MAX = 4000
+ADVANCED_CONTEXT_SECTION_MAX = 4000
 
-# Per-section overrides for SWOT context - increased limits for better context retention
-SWOT_DISCOVERY_MAX = 12000
-SWOT_PRODUCT_MAX   = 10000
-SWOT_PRICING_MAX   = 10000
-SWOT_FEEDBACK_MAX  = 10000
-SWOT_NEWS_MAX      = 10000
-SWOT_SOCIAL_MAX    = 10000
+# Per-section overrides for SWOT context (issue #13: discovery and feedback need more chars)
+SWOT_DISCOVERY_MAX = 6000
+SWOT_PRODUCT_MAX   = 4000
+SWOT_PRICING_MAX   = 3000
+SWOT_FEEDBACK_MAX  = 4000
+SWOT_NEWS_MAX      = 2000
+SWOT_SOCIAL_MAX    = 2000
 
 # Per-section overrides for advanced context (Sections 12–19 need more context)
-ADVANCED_DISCOVERY_MAX = 12000
-ADVANCED_FEEDBACK_MAX   = 12000
+ADVANCED_DISCOVERY_MAX = 6000
+ADVANCED_FEEDBACK_MAX   = 6000
 
 # Substrings (lowercase) matched against cleaned LLM headers → keys used by report_generator.py
 SECTION_KEY_MAP = {
@@ -683,61 +672,16 @@ Use markdown format with ### headers for each competitor."""
     # ── Per-competitor price extraction for positioning matrix ─────────────────
     per_prices = {}
     for comp in competitor_names:
-        if not comp or not comp.strip():
-            continue
-        comp_clean = comp.strip()
-        # Try multiple patterns to match different header formats in pricing output
-        # Pattern 1: Exact header match with optional emoji/number prefix
-        section_pattern = rf'(?:##{{1,4}})\s*(?:📊\s*)?(?:\d+\.\s*)?{re.escape(comp_clean)}.*?(?:\n|$)'
+        section_pattern = rf'(?:##{{1,4}})\s*{re.escape(comp)}.*?\n(.*?)(?=\n##|\Z)'
         section_match = re.search(section_pattern, pricing_text, re.DOTALL | re.IGNORECASE)
-
-        # Pattern 2: Look for competitor section in the "Competitor-by-Competitor Analyses" section
-        if not section_match:
-            section_pattern = rf'(?:###\s*)?(?:\d+\.\s*)?{re.escape(comp_clean)}.*?(?:\n|--+)'
-            section_match = re.search(section_pattern, pricing_text, re.DOTALL | re.IGNORECASE)
-
-        # Pattern 3: Find any paragraph mentioning the competitor and price info
-        if not section_match:
-            # Look for the competitor name followed by price indicators within reasonable distance
-            section_pattern = rf'{re.escape(comp_clean)}.*?(?:€€€|€€|€|premium|mid|budget|price).{{0,200}}'
-            section_match = re.search(section_pattern, pricing_text, re.DOTALL | re.IGNORECASE)
-
         if section_match:
-            # Get up to 500 chars after the match for context
-            start_pos = max(0, section_match.start() - 50)
-            end_pos = min(len(pricing_text), section_match.end() + 500)
-            section_text = pricing_text[start_pos:end_pos]
-
-            # Determine price tier from the text
-            if '€€€' in section_text or 'premium' in section_text.lower() or '$$$' in section_text:
-                per_prices[comp_clean] = 'Premium'
-            elif '€€' in section_text or 'mid' in section_text.lower() or '$$' in section_text:
-                per_prices[comp_clean] = 'Mid-range'
-            elif '€' in section_text and '€€' not in section_text or 'budget' in section_text.lower() or '$' in section_text:
-                per_prices[comp_clean] = 'Budget'
-
-    # Fallback: If no prices extracted, try to extract from pricing table in The Barn section
-    if not per_prices:
-        # Look for price indicators in the entire pricing text
-        for comp in competitor_names:
-            if not comp or not comp.strip():
-                continue
-            comp_lower = comp.lower()
-            # Find sections mentioning this competitor
-            comp_idx = pricing_text.lower().find(comp_lower)
-            if comp_idx >= 0:
-                # Get surrounding context (500 chars)
-                context_start = max(0, comp_idx - 100)
-                context_end = min(len(pricing_text), comp_idx + 500)
-                context = pricing_text[context_start:context_end]
-
-                if '€€€' in context or 'premium' in context.lower():
-                    per_prices[comp] = 'Premium'
-                elif '€€' in context or 'mid' in context.lower():
-                    per_prices[comp] = 'Mid-range'
-                elif '€' in context:
-                    per_prices[comp] = 'Budget'
-
+            section_text = section_match.group(1)
+            if '€€€' in section_text or 'premium' in section_text.lower():
+                per_prices[comp] = 'Premium'
+            elif '€€' in section_text or 'mid' in section_text.lower():
+                per_prices[comp] = 'Mid-range'
+            elif '€' in section_text or 'budget' in section_text.lower():
+                per_prices[comp] = 'Budget'
     shared_data['per_competitor_prices'] = per_prices
     print(f"  Per-competitor prices extracted: {per_prices}")
 
