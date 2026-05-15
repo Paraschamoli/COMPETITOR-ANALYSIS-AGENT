@@ -38,20 +38,21 @@ except ImportError:
     SEARCH_TOOLS_AVAILABLE = False
 
 # Max chars passed into downstream agents (sentence-aware); full step_results stay intact for the report.
-SWOT_CONTEXT_SECTION_MAX = 4000
-ADVANCED_CONTEXT_SECTION_MAX = 4000
+# Increased limits to prevent data loss from excessive truncation
+SWOT_CONTEXT_SECTION_MAX = 8000
+ADVANCED_CONTEXT_SECTION_MAX = 8000
 
-# Per-section overrides for SWOT context (issue #13: discovery and feedback need more chars)
-SWOT_DISCOVERY_MAX = 6000
-SWOT_PRODUCT_MAX   = 4000
-SWOT_PRICING_MAX   = 3000
-SWOT_FEEDBACK_MAX  = 4000
-SWOT_NEWS_MAX      = 2000
-SWOT_SOCIAL_MAX    = 2000
+# Per-section overrides for SWOT context - all increased to prevent 85%+ truncation
+SWOT_DISCOVERY_MAX = 10000
+SWOT_PRODUCT_MAX   = 8000
+SWOT_PRICING_MAX   = 10000
+SWOT_FEEDBACK_MAX  = 10000
+SWOT_NEWS_MAX      = 10000
+SWOT_SOCIAL_MAX    = 10000
 
 # Per-section overrides for advanced context (Sections 12–19 need more context)
-ADVANCED_DISCOVERY_MAX = 6000
-ADVANCED_FEEDBACK_MAX   = 6000
+ADVANCED_DISCOVERY_MAX = 12000
+ADVANCED_FEEDBACK_MAX   = 12000
 
 # Substrings (lowercase) matched against cleaned LLM headers → keys used by report_generator.py
 SECTION_KEY_MAP = {
