@@ -11,6 +11,17 @@ import argparse
 import logging
 import re
 import time
+import sys
+import io
+
+# Fix Windows console Unicode encoding issues
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 from agent.config import (
     COORDINATOR_MODEL, AGENT_MODEL, CRAWL4AI_AVAILABLE,
     AGENT_REACH_AVAILABLE, YOUTUBE_AVAILABLE, ENABLE_ADVANCED_SECTIONS, GOOGLE_MAPS_SCRAPER_AVAILABLE
@@ -38,20 +49,20 @@ except ImportError:
     SEARCH_TOOLS_AVAILABLE = False
 
 # Max chars passed into downstream agents (sentence-aware); full step_results stay intact for the report.
-SWOT_CONTEXT_SECTION_MAX = 4000
-ADVANCED_CONTEXT_SECTION_MAX = 4000
+SWOT_CONTEXT_SECTION_MAX = 10000
+ADVANCED_CONTEXT_SECTION_MAX = 8000
 
-# Per-section overrides for SWOT context (issue #13: discovery and feedback need more chars)
-SWOT_DISCOVERY_MAX = 6000
-SWOT_PRODUCT_MAX   = 4000
-SWOT_PRICING_MAX   = 3000
-SWOT_FEEDBACK_MAX  = 4000
-SWOT_NEWS_MAX      = 2000
-SWOT_SOCIAL_MAX    = 2000
+# Per-section overrides for SWOT context - increased limits for better context retention
+SWOT_DISCOVERY_MAX = 12000
+SWOT_PRODUCT_MAX   = 10000
+SWOT_PRICING_MAX   = 10000
+SWOT_FEEDBACK_MAX  = 10000
+SWOT_NEWS_MAX      = 10000
+SWOT_SOCIAL_MAX    = 10000
 
 # Per-section overrides for advanced context (Sections 12–19 need more context)
-ADVANCED_DISCOVERY_MAX = 6000
-ADVANCED_FEEDBACK_MAX   = 6000
+ADVANCED_DISCOVERY_MAX = 12000
+ADVANCED_FEEDBACK_MAX   = 12000
 
 # Substrings (lowercase) matched against cleaned LLM headers → keys used by report_generator.py
 SECTION_KEY_MAP = {
@@ -151,7 +162,7 @@ def _hit_to_competitor_row(title: str, company: str) -> dict | None:
 
     # Reject: title too long (real business names are short)
     if len(name) > 60:
-        print(f"  ⚠️  Rejected non-business title: {name[:60]}")
+        print(f"  [!] Rejected non-business title: {name[:60]}")
         return None
 
     # Reject: contains " - " followed by an aggregator name
@@ -159,13 +170,13 @@ def _hit_to_competitor_row(title: str, company: str) -> dict | None:
         after_dash = name.split(" - ", 1)[1].lower()
         for agg in AGGREGATOR_REJECT_PATTERNS:
             if agg.lower() in after_dash:
-                print(f"  ⚠️  Rejected non-business title: {name[:60]}")
+                print(f"  [!] Rejected non-business title: {name[:60]}")
                 return None
 
     # Reject: matches any superlative / article pattern
     for pattern in TITLE_REJECT_PATTERNS:
         if re.search(pattern, name_lower):
-            print(f"  ⚠️  Rejected non-business title: {name[:60]}")
+            print(f"  [!] Rejected non-business title: {name[:60]}")
             return None
 
     return {
@@ -233,7 +244,7 @@ def _collect_competitors_from_search_query(query: str, company: str, location: s
             if row:
                 # Follow-up validation
                 if location and not validate_business_name(row["name"], location):
-                    print(f"  ⚠️  Rejected non-business name after follow-up: {row['name'][:60]}")
+                    print(f"  [!] Rejected non-business name after follow-up: {row['name'][:60]}")
                     continue
                 rows.append(row)
         if len(rows) < 2:
@@ -242,7 +253,7 @@ def _collect_competitors_from_search_query(query: str, company: str, location: s
             print(f"     Tavily extracted {len(rows)} names for: {query}")
             return rows
     except Exception as e:
-        print(f"     ⚠️  Tavily failed ({e}); trying Serper...")
+        print(f"     [!] Tavily failed ({e}); trying Serper...")
 
     # ── Serper (fallback) ─────────────────────────────────────────────────────
     try:
@@ -258,7 +269,7 @@ def _collect_competitors_from_search_query(query: str, company: str, location: s
             if row:
                 # Follow-up validation
                 if location and not validate_business_name(row["name"], location):
-                    print(f"  ⚠️  Rejected non-business name after follow-up: {row['name'][:60]}")
+                    print(f"  [!] Rejected non-business name after follow-up: {row['name'][:60]}")
                     continue
                 rows.append(row)
         if len(rows) < 2:
@@ -266,7 +277,7 @@ def _collect_competitors_from_search_query(query: str, company: str, location: s
         elif rows:
             print(f"     Serper extracted {len(rows)} names for: {query}")
     except Exception as e:
-        print(f"     ⚠️  Serper failed ({e})")
+        print(f"     [!] Serper failed ({e})")
 
     return rows
 
@@ -285,19 +296,19 @@ def parse_args():
 
 def banner(args):
     w = 80
-    print("\n" + "═" * w)
+    print("\n" + "=" * w)
     print("  LOCAL BUSINESS COMPETITOR ANALYSIS AGENT")
-    print("═" * w)
+    print("=" * w)
     print(f"  Business       : {args.company}")
     print(f"  Type           : {args.domain}")
     print(f"  Location       : {args.location}")
     print(f"  Competitors    : {args.initial_competitors}")
     print(f"  Models         : {COORDINATOR_MODEL} / {AGENT_MODEL}")
-    print("  Crawl4AI       : {'[+] Available' if CRAWL4AI_AVAILABLE else '[-] Not installed'}")
+    print(f"  Crawl4AI       : {'[+] Available' if CRAWL4AI_AVAILABLE else '[-] Not installed'}")
     print(f"  Agent Reach    : {'[+] Available' if AGENT_REACH_AVAILABLE else '[-] Not installed'}")
     print(f"  Google Maps Scraper : {'[+] Available' if GOOGLE_MAPS_SCRAPER_AVAILABLE else '[-] Not available (Docker required)'}")
     print(f"  Advanced Sects : {'[+] Enabled' if ENABLE_ADVANCED_SECTIONS else '[-] Disabled (set ENABLE_ADVANCED_SECTIONS=true)'}")
-    print("═" * w)
+    print("=" * w)
     
     # Local business capabilities
     print(f"  Target: {args.domain.title()} in {args.location}")
@@ -505,21 +516,21 @@ def main():
         print(f"  [!] Competitor count via: {'table rows' if row_count >= list_count else 'list parsing'}")
     else:
         shared_data['competitor_count'] = regex_count
-        print(f"  📊 Competitor count via: regex fallback")
+        print(f"  [!] Competitor count via: regex fallback")
 
-    print(f"  📊 Discovered {shared_data['competitor_count']} competitors (excluding {company})")
+    print(f"  Discovered {shared_data['competitor_count']} competitors (excluding {company})")
 
     # Check if discovery failed or has insufficient competitors, then use deterministic fallback
     if "Error:" in step_results["discovery"] or shared_data["competitor_count"] < 6:
-        print("  🔄 Discovery failed or insufficient competitors. Running deterministic fallback...")
+        print("  [!] Discovery failed or insufficient competitors. Running deterministic fallback...")
 
         if not SEARCH_TOOLS_AVAILABLE:
-            print("  ⚠️  Search tools (Tavily/Serper) not available — cannot run web fallback.")
+            print("  Search tools (Tavily/Serper) not available — cannot run web fallback.")
             shared_data["competitor_list"] = competitors
             shared_data["competitor_count"] = len(competitors)
             if len(competitors) < 6:
                 print(
-                    f"  ⚠️  Only {len(competitors)} real competitors found. Report will cover available competitors only."
+                    f"  [!] Only {len(competitors)} real competitors found. Report will cover available competitors only."
                 )
         else:
             fallback_competitors: list[dict] = [dict(c) for c in competitors]
@@ -529,11 +540,11 @@ def main():
                 f"top {domain} {location}",
             ]
             for query in search_queries:
-                print(f"  🔍 Searching: {query}")
+                print(f" Searching: {query}")
                 try:
                     fallback_competitors.extend(_collect_competitors_from_search_query(query, company, location))
                 except Exception:
-                    print(f"  ⚠️  Search query failed: {query}")
+                    print(f"  [!] Search query failed: {query}")
                     continue
 
             unique_competitors: list[dict] = []
@@ -551,7 +562,7 @@ def main():
                     f"{domain} {location} recommended",
                 ]
                 for query in second_pass_queries:
-                    print(f"  🔍 Second-pass search: {query}")
+                    print(f"  [!] Second-pass search: {query}")
                     try:
                         for row in _collect_competitors_from_search_query(query, company, location):
                             n = row.get("name", "").strip()
@@ -559,17 +570,17 @@ def main():
                                 seen_names.add(n)
                                 unique_competitors.append(row)
                     except Exception:
-                        print(f"  ⚠️  Second-pass query failed: {query}")
+                        print(f"  [!] Second-pass query failed: {query}")
                         continue
 
             if len(unique_competitors) < 6:
                 print(
-                    f"  ⚠️  Only {len(unique_competitors)} real competitors found. Report will cover available competitors only."
+                    f"  [!] Only {len(unique_competitors)} real competitors found. Report will cover available competitors only."
                 )
 
             shared_data["competitor_list"] = unique_competitors
             shared_data["competitor_count"] = len(unique_competitors)
-            print(f"  📊 Fallback enriched list: {shared_data['competitor_count']} competitors (real names only)")
+            print(f"  [!] Fallback enriched list: {shared_data['competitor_count']} competitors (real names only)")
 
     # Build structured competitor list for explicit injection into prompts
     competitor_names = [comp["name"] for comp in shared_data["competitor_list"] if comp.get("name")]
@@ -583,24 +594,50 @@ def main():
         competitor_prompt_addition = "\n\nNo structured competitor list was extracted; infer competitors from the context and search results."
 
     # ── Step 2: Product & Service Analysis ──────────────────────────────────────
-    print("\n🔬 Step 2/7: Product & Service Analysis")
+    print("\n Step 2/7: Product & Service Analysis")
+    # Add canonical data injection like pricing has (helps model produce output)
     _result = run_step(
         "Product & Service Analysis",
         product_analysis_agent(),
-        f"{context}{target_analysis_instruction}{competitor_prompt_addition}\n\n"
-        f"Now do deep product/service analysis for each competitor vs {company} in {location}.",
+        f"{context}{target_analysis_instruction}{canonical_data_injection}{competitor_prompt_addition}\n\n"
+        f"Now do deep product/service analysis for {company} and all competitors in {location}. "
+        f"Focus on: menu items, specialties, unique offerings, ambiance.",
         company=company,
         domain=domain,
         location=location,
     )
-    if _result is None:
-        step_results["product"] = ""
-        print("  ⚠️  Product Analysis skipped — using empty placeholder")
+    if _result is None or len(_result.strip()) < 100:
+        # Fallback: Try to generate product analysis from discovery data
+        print("  [!] Product Analysis returned empty - attempting fallback...")
+        fallback_prompt = f"""Based on this discovery data, create a product analysis section:
+
+{step_results.get('discovery', 'No discovery data available')}
+
+Provide a product analysis for {company} and competitors covering:
+- Core offerings and menu items
+- Specialties and unique items
+- Price positioning (budget/mid-range/premium)
+
+Use markdown format with ### headers for each competitor."""
+        _result = run_step(
+            "Product & Service Analysis (Fallback)",
+            product_analysis_agent(),
+            fallback_prompt,
+            company=company,
+            domain=domain,
+            location=location,
+        )
+        if _result is None or len(_result.strip()) < 100:
+            step_results["product"] = ""
+            print("  [!] Product Analysis failed - using empty placeholder")
+        else:
+            step_results["product"] = _result
+            print(f"  [+] Product Analysis fallback complete ({len(_result)} chars)")
     else:
         step_results["product"] = _result
 
     # ── Step 3: Pricing & Business Model ──────────────────────────────────────
-    print("\n💰 Step 3/7: Pricing & Business Model Analysis")
+    print("\nStep 3/7: Pricing & Business Model Analysis")
     _result = run_step(
         "Pricing Analysis",
         pricing_business_agent(),
@@ -612,7 +649,7 @@ def main():
     )
     if _result is None:
         step_results["pricing"] = ""
-        print("  ⚠️  Pricing Analysis skipped — using empty placeholder")
+        print("  [!] Pricing Analysis skipped — using empty placeholder")
     else:
         step_results["pricing"] = _result
     
@@ -646,21 +683,66 @@ def main():
     # ── Per-competitor price extraction for positioning matrix ─────────────────
     per_prices = {}
     for comp in competitor_names:
-        section_pattern = rf'(?:##{{1,4}})\s*{re.escape(comp)}.*?\n(.*?)(?=\n##|\Z)'
+        if not comp or not comp.strip():
+            continue
+        comp_clean = comp.strip()
+        # Try multiple patterns to match different header formats in pricing output
+        # Pattern 1: Exact header match with optional emoji/number prefix
+        section_pattern = rf'(?:##{{1,4}})\s*(?:📊\s*)?(?:\d+\.\s*)?{re.escape(comp_clean)}.*?(?:\n|$)'
         section_match = re.search(section_pattern, pricing_text, re.DOTALL | re.IGNORECASE)
+
+        # Pattern 2: Look for competitor section in the "Competitor-by-Competitor Analyses" section
+        if not section_match:
+            section_pattern = rf'(?:###\s*)?(?:\d+\.\s*)?{re.escape(comp_clean)}.*?(?:\n|--+)'
+            section_match = re.search(section_pattern, pricing_text, re.DOTALL | re.IGNORECASE)
+
+        # Pattern 3: Find any paragraph mentioning the competitor and price info
+        if not section_match:
+            # Look for the competitor name followed by price indicators within reasonable distance
+            section_pattern = rf'{re.escape(comp_clean)}.*?(?:€€€|€€|€|premium|mid|budget|price).{{0,200}}'
+            section_match = re.search(section_pattern, pricing_text, re.DOTALL | re.IGNORECASE)
+
         if section_match:
-            section_text = section_match.group(1)
-            if '€€€' in section_text or 'premium' in section_text.lower():
-                per_prices[comp] = 'Premium'
-            elif '€€' in section_text or 'mid' in section_text.lower():
-                per_prices[comp] = 'Mid-range'
-            elif '€' in section_text or 'budget' in section_text.lower():
-                per_prices[comp] = 'Budget'
+            # Get up to 500 chars after the match for context
+            start_pos = max(0, section_match.start() - 50)
+            end_pos = min(len(pricing_text), section_match.end() + 500)
+            section_text = pricing_text[start_pos:end_pos]
+
+            # Determine price tier from the text
+            if '€€€' in section_text or 'premium' in section_text.lower() or '$$$' in section_text:
+                per_prices[comp_clean] = 'Premium'
+            elif '€€' in section_text or 'mid' in section_text.lower() or '$$' in section_text:
+                per_prices[comp_clean] = 'Mid-range'
+            elif '€' in section_text and '€€' not in section_text or 'budget' in section_text.lower() or '$' in section_text:
+                per_prices[comp_clean] = 'Budget'
+
+    # Fallback: If no prices extracted, try to extract from pricing table in The Barn section
+    if not per_prices:
+        # Look for price indicators in the entire pricing text
+        for comp in competitor_names:
+            if not comp or not comp.strip():
+                continue
+            comp_lower = comp.lower()
+            # Find sections mentioning this competitor
+            comp_idx = pricing_text.lower().find(comp_lower)
+            if comp_idx >= 0:
+                # Get surrounding context (500 chars)
+                context_start = max(0, comp_idx - 100)
+                context_end = min(len(pricing_text), comp_idx + 500)
+                context = pricing_text[context_start:context_end]
+
+                if '€€€' in context or 'premium' in context.lower():
+                    per_prices[comp] = 'Premium'
+                elif '€€' in context or 'mid' in context.lower():
+                    per_prices[comp] = 'Mid-range'
+                elif '€' in context:
+                    per_prices[comp] = 'Budget'
+
     shared_data['per_competitor_prices'] = per_prices
-    print(f"  💰 Per-competitor prices extracted: {per_prices}")
+    print(f"  Per-competitor prices extracted: {per_prices}")
 
     # ── Step 4: Local SEO & Content ────────────────────────────────────────────────
-    print("\n🔍 Step 4/7: Local SEO & Content Strategy")
+    print("\nStep 4/7: Local SEO & Content Strategy")
     _result = run_step(
         "Local SEO Analysis",
         seo_content_agent(),
@@ -672,13 +754,13 @@ def main():
     )
     if _result is None:
         step_results["seo"] = ""
-        print("  ⚠️  SEO Analysis skipped — using empty placeholder")
+        print("  [!] SEO Analysis skipped — using empty placeholder")
     else:
         step_results["seo"] = _result
 
     # YouTube API supplement (if configured) — fetched BEFORE Step 5 so it can be injected into the social prompt
     if YOUTUBE_AVAILABLE and not args.skip_youtube:
-        print("  🎬 Fetching YouTube stats via API...")
+        print("   Fetching YouTube stats via API...")
         key_competitors = competitors_seed.split(",") + [company]
         for comp in key_competitors[:5]:
             comp = comp.strip()
@@ -687,7 +769,7 @@ def main():
                 print(f"     YouTube data for {comp}: {youtube_data[comp].get('subscribers', 'N/A')} subscribers")
 
     # ── Step 5: Social Media Intelligence ────────────────────────────────────────
-    print("\n📱 Step 5/7: Social Media Intelligence")
+    print("\nStep 5/7: Social Media Intelligence")
     yt_summary = ""
     if youtube_data:
         lines = ["YouTube API Data (authoritative — use these counts):"]
@@ -711,12 +793,12 @@ def main():
     )
     if _result is None:
         step_results["social"] = ""
-        print("  ⚠️  Social Media Analysis skipped — using empty placeholder")
+        print("  [!] Social Media Analysis skipped — using empty placeholder")
     else:
         step_results["social"] = _result
     
     # ── Step 6: Local News & Intelligence ────────────────────────────────────────
-    print("\n📰 Step 6/7: Local News & Market Intelligence")
+    print("\nStep 6/7: Local News & Market Intelligence")
     _result = run_step(
         "Local News Analysis",
         news_intelligence_agent(),
@@ -729,12 +811,12 @@ def main():
     )
     if _result is None:
         step_results["news"] = ""
-        print("  ⚠️  News Analysis skipped — using empty placeholder")
+        print("  [!] News Analysis skipped — using empty placeholder")
     else:
         step_results["news"] = _result
 
     # ── Step 7: Customer Feedback ─────────────────────────────────────────────
-    print("\n💬 Step 7/7: Customer Feedback Analysis")
+    print("\nStep 7/7: Customer Feedback Analysis")
     _result = run_step(
         "Customer Feedback",
         customer_feedback_agent(),
@@ -746,7 +828,7 @@ def main():
     )
     if _result is None:
         step_results["feedback"] = ""
-        print("  ⚠️  Customer Feedback skipped — using empty placeholder")
+        print("  [!] Customer Feedback skipped — using empty placeholder")
     else:
         step_results["feedback"] = _result
     
@@ -785,7 +867,7 @@ def main():
             if rating or count:
                 shared_data['google_reviews'][competitor_name] = {'rating': rating, 'count': count}
     
-    print(f"  📊 Extracted Google review data for {len(shared_data['google_reviews'])} competitors")
+    print(f"   Extracted Google review data for {len(shared_data['google_reviews'])} competitors")
 
     # ── Update canonical_reviews with fresh feedback data (only for missing competitors) ──
     # New data from feedback only fills gaps — discovery data takes precedence
@@ -800,7 +882,7 @@ def main():
             }
 
     # ── SWOT Synthesis ────────────────────────────────────────────────
-    print("\n🎯 Bonus: SWOT Analysis & Strategic Recommendations")
+    print("\nBonus: SWOT Analysis & Strategic Recommendations")
     
     competitor_count = shared_data.get('competitor_count')
     competitor_list = shared_data.get('competitor_list')
@@ -809,7 +891,7 @@ def main():
     # Empty strings from failed steps are tolerated — SWOT can synthesize partial data
     if not competitor_count or not competitor_list:
         step_results["swot"] = "Insufficient data for SWOT analysis – competitor discovery failed."
-        print("  ⚠️  SWOT analysis skipped due to insufficient competitor data")
+        print("  [!] SWOT analysis skipped due to insufficient competitor data")
     else:
         # ── FIX #13: inject competitor names list + larger context slices ────
         competitor_list_for_swot = '\n'.join(
@@ -862,9 +944,22 @@ Key Local Research Findings:
     # ── Advanced Sections (if enabled) ────────────────────────────────────────
     advanced_sections = {}
     if ENABLE_ADVANCED_SECTIONS:
-        print("\n🚀 Advanced: Strategic Analysis & Recommendations")
-        advanced_context = f"""
-CRITICAL: Generate ALL 9 sections below. Use ### headers exactly matching:
+        print("\nAdvanced: Strategic Analysis & Recommendations")
+        # Use explicit dict with .format_map() to avoid KeyError on special characters
+        advanced_context_kwargs = {
+            'company': company,
+            'domain': domain,
+            'location': location,
+            'discovery': clean_cutoff(step_results['discovery'], max_chars=ADVANCED_DISCOVERY_MAX),
+            'product': clean_cutoff(step_results['product'], max_chars=ADVANCED_CONTEXT_SECTION_MAX),
+            'pricing': clean_cutoff(step_results['pricing'], max_chars=ADVANCED_CONTEXT_SECTION_MAX),
+            'seo': clean_cutoff(step_results['seo'], max_chars=ADVANCED_CONTEXT_SECTION_MAX),
+            'social': clean_cutoff(step_results['social'], max_chars=ADVANCED_CONTEXT_SECTION_MAX),
+            'news': clean_cutoff(step_results['news'], max_chars=ADVANCED_CONTEXT_SECTION_MAX),
+            'feedback': clean_cutoff(step_results['feedback'], max_chars=ADVANCED_FEEDBACK_MAX),
+            'swot': clean_cutoff(step_results['swot'], max_chars=ADVANCED_CONTEXT_SECTION_MAX),
+        }
+        advanced_context = """CRITICAL: Generate ALL 9 sections below. Use ### headers exactly matching:
 '### 1. Customer Personas', '### 2. Risk Assessment', '### 3. Actionable Recommendations',
 '### 4. Financial Benchmarks', '### 5. Digital Ads & Paid Media', '### 6. UGC & Hashtag Analysis',
 '### 7. Accessibility & Inclusivity', '### 8. Seasonal Trends', '### 9. Next Steps / Action Plan'.
@@ -873,15 +968,14 @@ Do NOT use #### or deeper nesting for section titles.
 Business: {company} | Type: {domain} | Location: {location}
 
 Complete Research Summary:
-- Discovery: {clean_cutoff(step_results['discovery'], max_chars=ADVANCED_DISCOVERY_MAX)}
-- Product: {clean_cutoff(step_results['product'], max_chars=ADVANCED_CONTEXT_SECTION_MAX)}
-- Pricing: {clean_cutoff(step_results['pricing'], max_chars=ADVANCED_CONTEXT_SECTION_MAX)}
-- SEO: {clean_cutoff(step_results['seo'], max_chars=ADVANCED_CONTEXT_SECTION_MAX)}
-- Social: {clean_cutoff(step_results['social'], max_chars=ADVANCED_CONTEXT_SECTION_MAX)}
-- News: {clean_cutoff(step_results['news'], max_chars=ADVANCED_CONTEXT_SECTION_MAX)}
-- Feedback: {clean_cutoff(step_results['feedback'], max_chars=ADVANCED_FEEDBACK_MAX)}
-- SWOT: {clean_cutoff(step_results['swot'], max_chars=ADVANCED_CONTEXT_SECTION_MAX)}
-"""
+- Discovery: {discovery}
+- Product: {product}
+- Pricing: {pricing}
+- SEO: {seo}
+- Social: {social}
+- News: {news}
+- Feedback: {feedback}
+- SWOT: {swot}""".format(**advanced_context_kwargs)
         advanced_result = run_step(
             "Advanced Strategic Analysis",
             advanced_sections_agent(),
@@ -890,6 +984,9 @@ Complete Research Summary:
             domain=domain,
             location=location,
         )
+        if advanced_result is None:
+            advanced_result = ""
+            print("  [!] Advanced Analysis failed -- using empty placeholder")
         sections = {}
         current_section = None
         current_content = []
@@ -910,7 +1007,7 @@ Complete Research Summary:
         print(f"  Advanced sections parsed: {list(advanced_sections.keys())}")
 
     # ── Build Final Report ────────────────────────────────────────────────────
-    print("\n📄 Building final report...")
+    print("\nBuilding final report...")
     final_report = synthesize_final_report(
         company=company,
         domain=domain,
@@ -925,9 +1022,9 @@ Complete Research Summary:
     path = save_report(final_report, args.output, slug)
 
     print("\n" + "=" * 80)
-    print(f"  ✅ Analysis Complete!")
-    print(f"  📁 Report saved → {path}")
-    print(f"  📊 Total: {len(final_report):,} chars | {len(final_report.split(chr(10)))} lines")
+    print(f"  Analysis Complete!")
+    print(f"  Report saved → {path}")
+    print(f"  Total: {len(final_report):,} chars | {len(final_report.split(chr(10)))} lines")
     print("=" * 80 + "\n")
 
 
