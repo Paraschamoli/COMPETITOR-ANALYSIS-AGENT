@@ -90,7 +90,7 @@ def validate_table_rows(table_text: str, max_cell_length: int = 200) -> str:
     return '\n'.join(cleaned_lines)
 
 
-def clean_cutoff(text: str, max_chars: int = 3000) -> str:
+def clean_cutoff(text: str, max_chars: int = 10000) -> str:
     """
     Truncate text at max_chars but never cut mid-sentence or mid-word.
     Completes the last sentence before truncating.

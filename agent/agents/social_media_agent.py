@@ -1,23 +1,78 @@
 #!/usr/bin/env python3
 """
 Social Media Intelligence Analyst Agent
-Enhanced with automatic follower count fetching and no-blank policy
+Enhanced with automatic follower count fetching, no-blank policy, and retry logic
 """
 
+import logging
 from agno.agent import Agent
 from ..models import agent_model
-from ..tools import search_tools
-from ..config import AGENT_REACH_AVAILABLE
+from ..tools import search_tools, get_social_media_tools
+from ..config import AGENT_REACH_AVAILABLE, agent_reach_search, check_agent_reach
+
+logger = logging.getLogger(__name__)
 
 
 def social_media_agent() -> Agent:
-    """Create and return the Social Media Intelligence Analyst agent"""
+    """Create and return the Social Media Intelligence Analyst agent with retry logic"""
+    # Get tools - use specialized social media tools which include fallback
+    tools = get_social_media_tools()
+
     return Agent(
         name="Social Media Intelligence Analyst",
         role="Extract social media presence and content strategy using enhanced platform access with complete data.",
-        model=agent_model(max_tokens=4000),
-        tools=search_tools(),  # Fallback to Serper/Tavily search
+        model=agent_model(max_tokens=8000),
+        tools=tools,
         instructions=[
+            "CRITICAL MANDATORY PROCESS - YOU MUST FOLLOW THIS EXACTLY:",
+            "",
+            "1. BEFORE analyzing competitors, you MUST perform actual searches.",
+            "2. For EACH competitor, make at least 3 separate search calls.",
+            "3. If a search returns empty or error, RETRY with different query format.",
+            "4. If all searches fail after 3 retries, then mark as 'Not available' but still write analysis.",
+            "",
+            "RETRY INSTRUCTIONS:",
+            "- First try: '[Competitor] Instagram {location}'",
+            "- If fails, retry: '[Competitor] social media {location}'",
+            "- If still fails, retry: '[Competitor] Facebook page {location}'",
+            "- After 3 failures, write 'Unable to verify - all search attempts failed'",
+            "",
+            "NEVER respond with 0 characters - even if data is sparse, write what you found.",
+            "",
+            "STEP 0 — TARGET COMPANY SELF-AUDIT (do this before analyzing competitors):",
+            "  Search '{company} official website' → audit the target's own site quality",
+            "  Search '{company} Google Business Profile {location}' → audit GBP completeness",
+            "  Search '{company} Instagram {location}' → get follower count and post cadence",
+            "  Search '{company} reviews Google {location}' → get own review count and rating",
+            "  Present this as '### {company} — Self-Audit' section FIRST in your output",
+            "",
+            "Before analyzing, check {domain} parameter. Adapt your output format and analysis categories to specific business type. Do not assume business sells food, has a physical store, or offers delivery. Use generic terms like 'core offering', 'service category', 'product line' unless domain clearly implies specific categories.",
+            "",
+            "Perform comprehensive social media analysis for {company} and competitors in {domain} in {location}. Adapt your analysis to the specific business type ({domain}).",
+            "",
+            "CRITICAL: You MUST analyze EVERY competitor from the provided competitor list. Loop through each competitor. Do not skip any. If a competitor has no data, mark 'No data available' and continue.",
+            "In example search strings, «COMP» means substitute that competitor's exact business name.",
+            "Use Agent Reach when available for direct platform data, fallback to search strategies.",
+            "",
+            "CRITICAL DATA COMPLETION RULES:",
+            "- **No Blank Fields:** Every data cell must be filled. If data is unavailable, explicitly state 'Not publicly available' or 'Unable to verify' - never leave blank.",
+            "- **Automatic Follower Count Fetching:** For each competitor, search specifically for Instagram and Facebook follower counts using multiple search patterns:",
+            "  - '«COMP» Instagram followers count {location}'",
+            "  - '«COMP» Facebook page likes {location}'",
+            "  - '«COMP» social media statistics {location}'",
+            "  - '«COMP» Instagram profile {location}'",
+            "- **Multiple Source Attempts:** If initial search fails to find follower counts, try 3 different search patterns before marking as unavailable.",
+            "- **Verification Status:** Mark each social media metric with: [Verified via platform], [Verified via search], or [Not publicly available].",
+            "",
+            f"ENHANCED PLATFORM ACCESS (Agent Reach):",
+            f"Agent Reach Available: {AGENT_REACH_AVAILABLE}",
+            "",
+            "IMPORTANT: If Agent Reach is available, use these direct platform searches:",
+            "- Twitter: Search via agent-reach for '«COMP» {location} twitter'",
+            "- Reddit: Search via agent-reach for '«COMP» {location} reddit'",
+            "- YouTube: Search via agent-reach for '«COMP» {location} youtube channel'",
+            "",
+            "PRIORITY PLATFORMS FOR LOCAL BUSINESSES:",
             "STEP 0 — TARGET COMPANY SELF-AUDIT (do this before analyzing competitors):",
             "  Search '{company} official website' → audit the target's own site quality",
             "  Search '{company} Google Business Profile {location}' → audit GBP completeness",

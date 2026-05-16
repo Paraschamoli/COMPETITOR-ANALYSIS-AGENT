@@ -13,7 +13,7 @@ def news_intelligence_agent() -> Agent:
     return Agent(
         name="News & Market Intelligence Analyst",
         role="Track recent strategic moves, funding, product launches, and market signals.",
-        model=agent_model(max_tokens=4000),
+        model=agent_model(max_tokens=8000),
         tools=all_tools(),
         instructions=[
             "Before analyzing, check {domain} parameter. Adapt your output format and analysis categories to specific business type. Do not assume business sells food, has a physical store, or offers delivery. Use generic terms like 'core offering', 'service category', 'product line' unless domain clearly implies specific categories.",

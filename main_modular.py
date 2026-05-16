@@ -39,20 +39,20 @@ except ImportError:
 
 # Max chars passed into downstream agents (sentence-aware); full step_results stay intact for the report.
 # Increased limits to prevent data loss from excessive truncation
-SWOT_CONTEXT_SECTION_MAX = 8000
-ADVANCED_CONTEXT_SECTION_MAX = 8000
+SWOT_CONTEXT_SECTION_MAX = 20000
+ADVANCED_CONTEXT_SECTION_MAX = 20000
 
-# Per-section overrides for SWOT context - all increased to prevent 85%+ truncation
-SWOT_DISCOVERY_MAX = 10000
-SWOT_PRODUCT_MAX   = 8000
-SWOT_PRICING_MAX   = 10000
-SWOT_FEEDBACK_MAX  = 10000
-SWOT_NEWS_MAX      = 10000
-SWOT_SOCIAL_MAX    = 10000
+# Per-section overrides for SWOT context - all increased significantly
+SWOT_DISCOVERY_MAX = 15000
+SWOT_PRODUCT_MAX   = 15000
+SWOT_PRICING_MAX   = 15000
+SWOT_FEEDBACK_MAX  = 15000
+SWOT_NEWS_MAX      = 15000
+SWOT_SOCIAL_MAX    = 15000
 
 # Per-section overrides for advanced context (Sections 12–19 need more context)
-ADVANCED_DISCOVERY_MAX = 12000
-ADVANCED_FEEDBACK_MAX   = 12000
+ADVANCED_DISCOVERY_MAX = 20000
+ADVANCED_FEEDBACK_MAX   = 20000
 
 # Substrings (lowercase) matched against cleaned LLM headers → keys used by report_generator.py
 SECTION_KEY_MAP = {
@@ -321,22 +321,32 @@ def run_step(
     company: str,
     domain: str,
     location: str,
+    min_content_length: int = 100,  # Minimum chars to consider successful
 ) -> str | None:
     """Run a single agent step with error handling and retry logic.
 
     Prompt is formatted with company/domain/location; agent instructions are
     handled by agno as the system prompt — not injected into user content.
     Returns None on final failure so callers can detect the failure state.
+
+    Args:
+        min_content_length: Minimum characters required to consider the step successful.
+                           If agent returns less, it will be retried.
     """
     MAX_RETRIES = 3
     RETRY_DELAY = 5  # seconds, doubled on each retry
 
     print(f"  Running: {step_name}...")
     last_error = None
+
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            formatted_prompt = prompt.format(
-                company=company, domain=domain, location=location
+            # Use safe string replacement that handles curly braces in content
+            # This avoids KeyError from .format() when content contains { or }
+            formatted_prompt = (
+                prompt.replace('{company}', company)
+                .replace('{domain}', domain)
+                .replace('{location}', location)
             )
 
             result = agent.run(
@@ -352,8 +362,22 @@ def run_step(
                 content = str(result)
             else:
                 content = ""
+
+            # Check if content is too short - retry with warning
+            content_len = len(content.strip()) if content else 0
+            if content_len < min_content_length:
+                if attempt < MAX_RETRIES:
+                    wait = RETRY_DELAY * attempt
+                    print(f"  [!] {step_name} returned only {content_len} chars (need {min_content_length})")
+                    print(f"  [!] Retrying {step_name} in {wait}s (attempt {attempt+1}/{MAX_RETRIES})...")
+                    time.sleep(wait)
+                    continue
+                else:
+                    print(f"  [!] {step_name} completed but with minimal content ({content_len} chars)")
+
             print(f"  [+] {step_name} complete ({len(content)} chars)")
             return content if content else None
+
         except Exception as e:
             last_error = e
             logging.exception(f"{step_name} attempt {attempt}/{MAX_RETRIES} failed")
@@ -572,7 +596,15 @@ def main():
             shared_data["competitor_count"] = len(unique_competitors)
             print(f"  [!] Fallback enriched list: {shared_data['competitor_count']} competitors (real names only)")
 
+    # ── Cap competitors to 4 to prevent token overload in downstream agents ─────
+    MAX_COMPETITORS = 4
+    if len(shared_data["competitor_list"]) > MAX_COMPETITORS:
+        print(f"  [!] Capping competitor list from {len(shared_data['competitor_list'])} to {MAX_COMPETITORS}")
+        shared_data["competitor_list"] = shared_data["competitor_list"][:MAX_COMPETITORS]
+        shared_data["competitor_count"] = MAX_COMPETITORS
+
     # Build structured competitor list for explicit injection into prompts
+    # (uses the already-capped shared_data["competitor_list"])
     competitor_names = [comp["name"] for comp in shared_data["competitor_list"] if comp.get("name")]
     competitor_list_str = "\n".join(f"- {name}" for name in competitor_names)
     if competitor_names:
@@ -583,48 +615,63 @@ def main():
     else:
         competitor_prompt_addition = "\n\nNo structured competitor list was extracted; infer competitors from the context and search results."
 
-    # ── Step 2: Product & Service Analysis ──────────────────────────────────────
+    # ── Step 2: Product & Service Analysis (chunked for reliability) ──────────────
     print("\n Step 2/7: Product & Service Analysis")
-    # Add canonical data injection like pricing has (helps model produce output)
-    _result = run_step(
-        "Product & Service Analysis",
-        product_analysis_agent(),
-        f"{context}{target_analysis_instruction}{canonical_data_injection}{competitor_prompt_addition}\n\n"
-        f"Now do deep product/service analysis for {company} and all competitors in {location}. "
-        f"Focus on: menu items, specialties, unique offerings, ambiance.",
-        company=company,
-        domain=domain,
-        location=location,
-    )
-    if _result is None or len(_result.strip()) < 100:
-        # Fallback: Try to generate product analysis from discovery data
-        print("  [!] Product Analysis returned empty - attempting fallback...")
-        fallback_prompt = f"""Based on this discovery data, create a product analysis section:
+    all_product_results = []
 
-{step_results.get('discovery', 'No discovery data available')}
+    # Process competitors in batches of 6 to prevent token limits and ensure completion
+    BATCH_SIZE = 6
+    competitor_batches = [
+        competitor_names[i:i + BATCH_SIZE]
+        for i in range(0, len(competitor_names), BATCH_SIZE)
+    ]
 
-Provide a product analysis for {company} and competitors covering:
-- Core offerings and menu items
-- Specialties and unique items
-- Price positioning (budget/mid-range/premium)
+    for batch_num, batch in enumerate(competitor_batches, 1):
+        batch_list_str = "\n".join(f"- {name}" for name in batch)
+        batch_instruction = (
+            f"\n\nBATCH {batch_num}/{len(competitor_batches)} - Analyze these businesses:\n"
+            f"{batch_list_str}\n\n"
+            f"Focus on: menu items, specialties, unique offerings, ambiance, customer experience.\n"
+            f"Use ### headers for each business. Produce at least 200 words of analysis content."
+        )
 
-Use markdown format with ### headers for each competitor."""
         _result = run_step(
-            "Product & Service Analysis (Fallback)",
+            f"Product & Service Analysis (Batch {batch_num}/{len(competitor_batches)})",
             product_analysis_agent(),
-            fallback_prompt,
+            f"{context}{target_analysis_instruction}{canonical_data_injection}{batch_instruction}",
             company=company,
             domain=domain,
             location=location,
         )
-        if _result is None or len(_result.strip()) < 100:
-            step_results["product"] = ""
-            print("  [!] Product Analysis failed - using empty placeholder")
+        if _result and len(_result.strip()) >= 100:
+            all_product_results.append(_result)
+            print(f"  [+] Batch {batch_num} complete ({len(_result)} chars)")
         else:
-            step_results["product"] = _result
-            print(f"  [+] Product Analysis fallback complete ({len(_result)} chars)")
+            print(f"  [!] Batch {batch_num} returned empty, trying fallback...")
+            # Fallback for this batch using discovery data
+            fallback_prompt = f"""Based on this data, create product analysis for: {', '.join(batch)}
+
+{step_results.get('discovery', 'No discovery data available')}
+
+Analyze core offerings, specialties, and competitive positioning. Use markdown format."""
+            _fallback = run_step(
+                f"Product Analysis Fallback (Batch {batch_num})",
+                product_analysis_agent(),
+                fallback_prompt,
+                company=company,
+                domain=domain,
+                location=location,
+            )
+            if _fallback and len(_fallback.strip()) >= 100:
+                all_product_results.append(_fallback)
+                print(f"  [+] Batch {batch_num} fallback complete ({len(_fallback)} chars)")
+
+    if all_product_results:
+        step_results["product"] = "\n\n---\n\n".join(all_product_results)
+        print(f"  [+] Product & Service Analysis complete (total: {len(step_results['product'])} chars)")
     else:
-        step_results["product"] = _result
+        step_results["product"] = ""
+        print("  [!] Product Analysis failed - using empty placeholder")
 
     # ── Step 3: Pricing & Business Model ──────────────────────────────────────
     print("\nStep 3/7: Pricing & Business Model Analysis")
@@ -636,6 +683,7 @@ Use markdown format with ### headers for each competitor."""
         company=company,
         domain=domain,
         location=location,
+        min_content_length=500,
     )
     if _result is None:
         step_results["pricing"] = ""
@@ -647,7 +695,7 @@ Use markdown format with ### headers for each competitor."""
     pricing_text = step_results["pricing"]
     company_section = ""
     section_match = re.search(
-        rf'(?:##{{1,4}})\s*{re.escape(company)}.*?\n(.*?)(?=\n##|\Z)',
+        rf'(?:##{{1,4}})[^#\n]*{re.escape(company)}[^#\n]*\n(.*?)(?=\n##|\Z)',
         pricing_text, re.DOTALL | re.IGNORECASE
     )
     if section_match:
@@ -673,7 +721,7 @@ Use markdown format with ### headers for each competitor."""
     # ── Per-competitor price extraction for positioning matrix ─────────────────
     per_prices = {}
     for comp in competitor_names:
-        section_pattern = rf'(?:##{{1,4}})\s*{re.escape(comp)}.*?\n(.*?)(?=\n##|\Z)'
+        section_pattern = rf'(?:##{{1,4}})[^#\n]*{re.escape(comp)}[^#\n]*\n(.*?)(?=\n##|\Z)'
         section_match = re.search(section_pattern, pricing_text, re.DOTALL | re.IGNORECASE)
         if section_match:
             section_text = section_match.group(1)
@@ -735,6 +783,7 @@ Use markdown format with ### headers for each competitor."""
         company=company,
         domain=domain,
         location=location,
+        min_content_length=500,  # Require at least 500 chars - retry if too short
     )
     if _result is None:
         step_results["social"] = ""
@@ -770,6 +819,7 @@ Use markdown format with ### headers for each competitor."""
         company=company,
         domain=domain,
         location=location,
+        min_content_length=500,
     )
     if _result is None:
         step_results["feedback"] = ""
@@ -882,6 +932,7 @@ Key Local Research Findings:
             company=company,
             domain=domain,
             location=location,
+            min_content_length=300,
         )
         if step_results["swot"] is None:
             step_results["swot"] = ""
@@ -920,7 +971,22 @@ Complete Research Summary:
 - Social: {social}
 - News: {news}
 - Feedback: {feedback}
-- SWOT: {swot}""".format(**advanced_context_kwargs)
+- SWOT: {swot}"""
+
+        # Use .replace() to avoid KeyError from curly braces in content
+        advanced_context = (
+            advanced_context.replace('{company}', company)
+            .replace('{domain}', domain)
+            .replace('{location}', location)
+            .replace('{discovery}', advanced_context_kwargs['discovery'])
+            .replace('{product}', advanced_context_kwargs['product'])
+            .replace('{pricing}', advanced_context_kwargs['pricing'])
+            .replace('{seo}', advanced_context_kwargs['seo'])
+            .replace('{social}', advanced_context_kwargs['social'])
+            .replace('{news}', advanced_context_kwargs['news'])
+            .replace('{feedback}', advanced_context_kwargs['feedback'])
+            .replace('{swot}', advanced_context_kwargs['swot'])
+        )
         advanced_result = run_step(
             "Advanced Strategic Analysis",
             advanced_sections_agent(),
@@ -928,6 +994,7 @@ Complete Research Summary:
             company=company,
             domain=domain,
             location=location,
+            min_content_length=300,
         )
         if advanced_result is None:
             advanced_result = ""
@@ -968,7 +1035,7 @@ Complete Research Summary:
 
     print("\n" + "=" * 80)
     print(f"  Analysis Complete!")
-    print(f"  Report saved → {path}")
+    print(f"  Report saved -> {path}")
     print(f"  Total: {len(final_report):,} chars | {len(final_report.split(chr(10)))} lines")
     print("=" * 80 + "\n")
 

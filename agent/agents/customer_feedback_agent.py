@@ -21,7 +21,7 @@ def customer_feedback_agent() -> Agent:
     return Agent(
         name="Customer Intelligence Analyst",
         role="Mine customer reviews with sentiment trends, theme clustering, and verified quotes only using Google Maps Scraper when available.",
-        model=agent_model(max_tokens=4000),
+        model=agent_model(max_tokens=8000),
         tools=tools,
         instructions=[
             "CRITICAL: You MUST perform actual web searches and verify all feedback data. DO NOT invent or hallucinate customer reviews or ratings.",

@@ -13,7 +13,7 @@ def seo_content_agent() -> Agent:
     return Agent(
         name="Local SEO & Content Strategy Analyst",
         role="Analyze local search presence, Google Maps optimization, and local content marketing for businesses.",
-        model=agent_model(max_tokens=4000),
+        model=agent_model(max_tokens=8000),
         tools=all_tools(),
         instructions=[
             "STEP 0 — TARGET COMPANY SELF-AUDIT (do this before analyzing competitors):",

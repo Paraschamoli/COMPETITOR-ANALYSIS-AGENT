@@ -14,7 +14,7 @@ def pricing_business_agent() -> Agent:
     return Agent(
         name="Universal Business Pricing & Strategy Analyst",
         role="Extract pricing information, business model, and competitive positioning with complete, verified data.",
-        model=agent_model(max_tokens=3500),
+        model=agent_model(max_tokens=8000),
         tools=all_tools(),
         instructions=[
             "CRITICAL: You MUST perform actual web searches and verify all pricing data. DO NOT invent or hallucinate pricing information.",
