@@ -7,6 +7,8 @@ import asyncio
 import subprocess
 import json
 import os
+import tempfile
+import shutil
 import time
 import logging
 from agno.tools.tavily import TavilyTools
@@ -277,79 +279,87 @@ def get_youtube_channel_stats(company_name: str) -> dict:
         return {"error": str(e)}
 
 
-def scrape_google_maps(query: str, location: str, depth: int = 1, extract_emails: bool = False, extra_reviews: bool = False) -> dict:
-    """
-    Use Google Maps Scraper via Docker to extract business data.
-    Returns comprehensive competitor data including reviews, ratings, coordinates.
-    
-    Args:
-        query: Search query (e.g., "restaurants")
-        location: Geographic location (e.g., "Amsterdam")
-        depth: Max scroll depth in results (default: 1)
-        extract_emails: Whether to extract emails from business websites
-        extra_reviews: Collect extended reviews up to ~300
-    
-    Returns:
-        Dict with scraped data or error message
-    """
+def scrape_google_maps(query: str, location: str, depth: int = 1, extract_emails: bool = False, extra_reviews: bool = False, max_retries: int = 2) -> dict:
     if not GOOGLE_MAPS_SCRAPER_AVAILABLE:
-        return {"error": "Google Maps Scraper not available. Docker must be installed and running."}
-    
-    try:
-        # Build Docker command
-        cmd = [
-            "docker", "run", "--rm",
-            "gosom/google-maps-scraper",
-            "-depth", str(depth),
-            "-json",  # Output JSON for easy parsing
-            "-input", "/dev/stdin",
-            "-results", "/dev/stdout"
-        ]
-        
-        # Add optional flags
-        if extract_emails:
-            cmd.append("-email")
-        if extra_reviews:
-            cmd.append("--extra-reviews")
-        
-        # Prepare input
-        input_data = f"{query} in {location}\n"
-        
-        # Run Docker command
-        result = subprocess.run(
-            cmd,
-            input=input_data,
-            capture_output=True,
-            text=True,
-            timeout=30,  # 30 second timeout to prevent hanging
-            encoding='utf-8',
-            errors='replace'
-        )
-        
-        if result.returncode != 0:
-            return {"error": f"Docker command failed: {result.stderr}"}
-        
-        # Parse JSON output
-        if result.stdout.strip():
-            try:
-                data = json.loads(result.stdout)
-                return {"success": True, "data": data}
-            except json.JSONDecodeError:
-                # Output might be multiple JSON lines
-                lines = result.stdout.strip().split('\n')
-                data = [json.loads(line) for line in lines if line.strip()]
-                return {"success": True, "data": data}
-        else:
-            return {"error": "No output from Google Maps Scraper"}
+        return {"error": "Google Maps Scraper not available."}
+
+    for attempt in range(max_retries + 1):
+        temp_dir = None
+        try:
+            # Create a temporary directory that will be mounted into the container
+            import tempfile
+            temp_dir = tempfile.mkdtemp()
+            input_file_path = os.path.join(temp_dir, "input.txt")
             
-    except subprocess.TimeoutExpired:
-        return {"error": "Google Maps Scraper timed out after 30 seconds. Docker may be downloading the image or the command is hanging."}
-    except FileNotFoundError:
-        return {"error": "Docker not found. Please install Docker."}
-    except Exception as e:
-        return {"error": f"Google Maps Scraper error: {str(e)}"}
-
-
+            with open(input_file_path, 'w', encoding='utf-8') as f:
+                f.write(f"{query} in {location}\n")
+            
+            # Container will see the file at /input/input.txt
+            cmd = [
+                "docker", "run", "--rm", "-i",
+                "-v", f"{temp_dir}:/input",   # mount the temp dir
+                "gosom/google-maps-scraper",
+                "-depth", str(depth),
+                "-json",
+                "-input", "/input/input.txt",
+                "-results", "/dev/stdout"
+            ]
+            if extract_emails:
+                cmd.append("-email")
+            if extra_reviews:
+                cmd.append("--extra-reviews")
+            
+            timeout_duration = 180 if attempt == 0 else 120
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout_duration,
+                encoding='utf-8',
+                errors='replace'
+            )
+            
+            # Clean up temp directory
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            
+            if result.returncode != 0:
+                if attempt < max_retries:
+                    print(f"  [!] Scraper failed (attempt {attempt+1}/{max_retries+1}), retrying...")
+                    time.sleep(5)
+                    continue
+                return {"error": f"Docker command failed: {result.stderr}"}
+            
+            # Parse output (same as before)
+            if result.stdout.strip():
+                try:
+                    data = json.loads(result.stdout)
+                    return {"success": True, "data": data}
+                except json.JSONDecodeError:
+                    lines = result.stdout.strip().split('\n')
+                    data = [json.loads(line) for line in lines if line.strip()]
+                    return {"success": True, "data": data}
+            else:
+                return {"error": "No output from Google Maps Scraper"}
+                
+        except subprocess.TimeoutExpired:
+            if temp_dir:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            if attempt < max_retries:
+                print(f"  [!] Scraper timed out (attempt {attempt+1}/{max_retries+1}), retrying in 10s...")
+                time.sleep(10)
+                continue
+            return {"error": f"Scraper timed out after {timeout_duration}s"}
+        except Exception as e:
+            if temp_dir:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            if attempt < max_retries:
+                print(f"  [!] Scraper error: {e}, retrying...")
+                time.sleep(5)
+                continue
+            return {"error": f"Scraper error: {str(e)}"}
+    
+    return {"error": "All retries exhausted"}
 def google_maps_scraper_tool():
     """
     Returns a function that can be used as an agno tool for Google Maps scraping.

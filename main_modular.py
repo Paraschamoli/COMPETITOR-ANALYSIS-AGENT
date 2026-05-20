@@ -25,7 +25,7 @@ from agent.agents.news_intelligence_agent import news_intelligence_agent
 from agent.agents.customer_feedback_agent import customer_feedback_agent
 from agent.agents.swot_synthesis_agent import swot_synthesis_agent
 from agent.agents.advanced_sections_agent import advanced_sections_agent
-from agent.tools import get_youtube_channel_stats
+from agent.tools import get_youtube_channel_stats, scrape_google_maps
 from agent.report_generator import synthesize_final_report, save_report, clean_cutoff
 
 try:
@@ -192,6 +192,43 @@ def _hit_to_competitor_row(title: str, company: str, location: str = "") -> dict
     }
 
 
+def _parse_scraper_results(scraper_data: dict) -> list[dict]:
+    """Parse Google Maps Scraper JSON output to extract competitor data."""
+    competitors = []
+    
+    if not scraper_data.get("success"):
+        return competitors
+    
+    data = scraper_data.get("data", [])
+    if not data:
+        return competitors
+    
+    # Handle both single dict and list of dicts
+    if isinstance(data, dict):
+        data = [data]
+    
+    for item in data:
+        try:
+            competitor = {
+                "name": item.get("title", item.get("name", "")),
+                "address": item.get("address", item.get("location", "")),
+                "rating": str(item.get("review_rating", item.get("rating", ""))),   # note review_rating
+                "review_count": str(item.get("review_count", item.get("reviews", item.get("reviewCount", "")))),  # note review_count
+                "phone": item.get("phone", ""),
+                "website": item.get("web_site", item.get("website", "")),           # web_site is the correct key
+                "price_level": item.get("price_range", item.get("priceLevel", "")),
+                "latitude": item.get("latitude", ""),
+                "longitude": item.get("longtitude", item.get("longitude", "")),     # note "longtitude" typo in scraper
+                "source": "Google Maps Scraper"
+            }
+            if competitor["name"]:  # Only add if name exists
+                competitors.append(competitor)
+        except Exception as e:
+            print(f"  [!] Error parsing scraper item: {e}")
+    
+    return competitors
+
+
 def _extract_titles_from_result(result) -> list[str]:
     """Extract title strings from whatever agno search tools actually return.
 
@@ -318,6 +355,31 @@ def banner(args):
         print("  [!] Enhanced platform access not enabled")
         print("       Install: https://raw.githubusercontent.com/Panniantong/agent-reach/main/docs/install.md")
     print("\n")
+    
+    # Pre-pull Docker image for Google Maps Scraper if enabled
+    if GOOGLE_MAPS_SCRAPER_AVAILABLE:
+        print("  [?] Pre-pulling Google Maps Scraper Docker image...")
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["docker", "pull", "gosom/google-maps-scraper"],
+                capture_output=True,
+                text=True,
+                timeout=180,  # 3 minute timeout for image pull
+                encoding='utf-8',
+                errors='replace'
+            )
+            if result.returncode == 0:
+                print("  [✓] Docker image pulled successfully")
+            else:
+                print(f"  [!] Docker pull returned non-zero: {result.stderr[:100]}")
+        except subprocess.TimeoutExpired:
+            print("  [!] Docker image pull timed out (will retry during scraping)")
+        except FileNotFoundError:
+            print("  [!] Docker not found")
+        except Exception as e:
+            print(f"  [!] Docker pull failed: {e}")
+        print()
 
 
 def run_step(
@@ -426,12 +488,46 @@ def main():
         "per_competitor_prices": {},
     }
 
+    # ── Google Maps Scraper Integration ────────────────────────────────────────
+    scraped_competitors = []
+    if GOOGLE_MAPS_SCRAPER_AVAILABLE:
+        print("  [?] Attempting Google Maps Scraper for competitor discovery...")
+        scraper_result = scrape_google_maps(domain, location, depth=2)
+        if scraper_result.get("success"):
+            scraped_competitors = _parse_scraper_results(scraper_result)
+            # Populate google_reviews directly from scraped competitors (discovery already gives rating+count)
+            for comp in scraped_competitors:
+                name = comp.get("name")
+                if name and name != company:
+                    shared_data["google_reviews"][name] = {
+                        "rating": comp.get("rating"),
+                        "count": comp.get("review_count"),
+                        "source": "google_maps_scraper"
+                    }
+            print(f"  [✓] Loaded review data for {len(shared_data['google_reviews'])} competitors from Google Maps Scraper")
+            print(f"  [✓] Google Maps Scraper found {len(scraped_competitors)} competitors")
+            for comp in scraped_competitors[:5]:  # Show first 5
+                print(f"     - {comp['name']} (Rating: {comp['rating']}, Reviews: {comp['review_count']})")
+        else:
+            print(f"  [!] Google Maps Scraper failed: {scraper_result.get('error', 'Unknown error')}")
+            print("  [!] Falling back to search-based discovery")
+    else:
+        print("  [!] Google Maps Scraper not available, using search-based discovery")
+
+    # Add scraped competitors to context for the agent
+    scraper_context = ""
+    if scraped_competitors:
+        scraper_context = "\n\nPRE-DISCOVERED COMPETITORS FROM GOOGLE MAPS SCRAPER:\n"
+        for comp in scraped_competitors:
+            scraper_context += f"- {comp['name']}: Address={comp['address']}, Rating={comp['rating']}, Reviews={comp['review_count']}\n"
+        scraper_context += "\nUse this scraped data as the primary source. Verify and expand upon it with additional searches if needed."
+
     # ── Step 1: Competitor Discovery ──────────────────────────────────────────
     print("\nStep 1/7: Local Competitor Discovery")
     _result = run_step(
         "Local Competitor Discovery",
         competitor_discovery_agent(),
-        f"{context}\n\nThe target business is {company}. Include it in the comparison matrix as the baseline row with label '[TARGET]' before listing competitors."
+        f"{context}{scraper_context}\n\nThe target business is {company}. Include it in the comparison matrix as the baseline row with label '[TARGET]' before listing competitors."
         f"\n\nDiscover and profile all local competitors for {company} in the {domain} category in {location}."
         f" Start with these known competitors: {competitors_seed}, then find more local businesses.",
         company=company,
@@ -818,6 +914,8 @@ Analyze core offerings, specialties, and competitive positioning. Use markdown f
 
     # ── Step 7: Customer Feedback ─────────────────────────────────────────────
     print("\nStep 7/7: Customer Feedback Analysis")
+    
+    # (Review data already loaded from discovery scraper; no need for second scraper pass)
     _result = run_step(
         "Customer Feedback",
         customer_feedback_agent(),
