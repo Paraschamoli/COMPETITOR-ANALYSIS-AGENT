@@ -103,6 +103,8 @@ TITLE_REJECT_PATTERNS = [
     r"^best\s", r"^top\s", r"^great\s", r"^\d+\s",
     r"^guide to\s", r"^where to\s",
     r"\s:\s*r/", r"\sreddit", r"\s–\s+\w+\s+\w+\s+\w+",  # : r/, reddit, " – word word word"
+    r"\bguide\b", r"\bblog\b", r"\barticle\b", r"\blist\b",  # guide/blog/article/list keywords
+    r"coffee shop with an", r"high-standard",  # generic descriptions
 ]
 
 
@@ -143,7 +145,7 @@ def validate_business_name(name: str, location: str) -> bool:
         return True  # pass-through on error
 
 
-def _hit_to_competitor_row(title: str, company: str) -> dict | None:
+def _hit_to_competitor_row(title: str, company: str, location: str = "") -> dict | None:
     name = (title or "").strip()
     name_lower = name.lower()
 
@@ -152,7 +154,12 @@ def _hit_to_competitor_row(title: str, company: str) -> dict | None:
 
     # Reject: title too long (real business names are short)
     if len(name) > 60:
-        print(f"  [!] Rejected non-business title: {name[:60]}")
+        print(f"  [!] Rejected (too long): {name[:60]}")
+        return None
+
+    # Reject: truncated names (ending with "..." or "…")
+    if name.endswith("...") or name.endswith("…"):
+        print(f"  [!] Rejected (truncated): {name[:60]}")
         return None
 
     # Reject: contains " - " followed by an aggregator name
@@ -160,14 +167,22 @@ def _hit_to_competitor_row(title: str, company: str) -> dict | None:
         after_dash = name.split(" - ", 1)[1].lower()
         for agg in AGGREGATOR_REJECT_PATTERNS:
             if agg.lower() in after_dash:
-                print(f"  [!] Rejected non-business title: {name[:60]}")
+                print(f"  [!] Rejected (aggregator): {name[:60]}")
                 return None
 
     # Reject: matches any superlative / article pattern
     for pattern in TITLE_REJECT_PATTERNS:
         if re.search(pattern, name_lower):
-            print(f"  [!] Rejected non-business title: {name[:60]}")
+            print(f"  [!] Rejected (pattern match): {name[:60]}")
             return None
+
+    # Validate: follow-up search to verify it's a real business
+    if location:
+        print(f"  [?] Validating business: {name}")
+        if not validate_business_name(name, location):
+            print(f"  [!] Rejected (validation failed): {name[:60]}")
+            return None
+        print(f"  [✓] Business validated: {name}")
 
     return {
         "name": name,
@@ -230,12 +245,8 @@ def _collect_competitors_from_search_query(query: str, company: str, location: s
         tavily_result = tavily_agent.run(f"Search for: {query}")
         titles = _extract_titles_from_result(tavily_result)[:5]
         for title in titles:
-            row = _hit_to_competitor_row(title, company)
+            row = _hit_to_competitor_row(title, company, location)
             if row:
-                # Follow-up validation
-                if location and not validate_business_name(row["name"], location):
-                    print(f"  [!] Rejected non-business name after follow-up: {row['name'][:60]}")
-                    continue
                 rows.append(row)
         if len(rows) < 2:
             rows.clear()
@@ -255,12 +266,8 @@ def _collect_competitors_from_search_query(query: str, company: str, location: s
         serper_result = serper_agent.run(f"Search for: {query}")
         titles = _extract_titles_from_result(serper_result)[:5]
         for title in titles:
-            row = _hit_to_competitor_row(title, company)
+            row = _hit_to_competitor_row(title, company, location)
             if row:
-                # Follow-up validation
-                if location and not validate_business_name(row["name"], location):
-                    print(f"  [!] Rejected non-business name after follow-up: {row['name'][:60]}")
-                    continue
                 rows.append(row)
         if len(rows) < 2:
             rows.clear()
