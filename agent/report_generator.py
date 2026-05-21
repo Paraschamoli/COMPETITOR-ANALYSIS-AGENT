@@ -40,6 +40,65 @@ def validate_table(table_text: str) -> bool:
     return True
 
 
+def normalize_table(table_text: str, max_cell_length: int = 200) -> str:
+    """
+    Normalize and repair markdown tables with auto-repair for common issues.
+    - Pads missing cells with empty strings
+    - Handles extra spaces by stripping cells
+    - Ensures all rows have same cell count as header
+    - Truncates cells longer than max_cell_length with '…'
+    Returns cleaned table text.
+    """
+    stripped = table_text.strip()
+    if len(stripped) < 2:
+        return table_text
+
+    lines = stripped.split("\n")
+    if len(lines) < 2:
+        return table_text
+    
+    # Get header and separator
+    header_line = lines[0]
+    sep_line = lines[1]
+    header_cells = [cell.strip() for cell in header_line.split('|')]
+    num_columns = len(header_cells)
+    
+    cleaned_lines = [header_line, sep_line]
+    repaired = False
+    
+    # Process data rows
+    for line in lines[2:]:
+        if not line.strip():
+            continue
+        
+        cells = [cell.strip() for cell in line.split('|')]
+        
+        # Auto-repair: pad missing cells or trim extra cells
+        if len(cells) != num_columns:
+            repaired = True
+            if len(cells) < num_columns:
+                # Pad missing cells
+                cells.extend([''] * (num_columns - len(cells)))
+            else:
+                # Trim extra cells
+                cells = cells[:num_columns]
+        
+        # Truncate long cells
+        cleaned_cells = []
+        for cell in cells:
+            if len(cell) > max_cell_length:
+                cleaned_cells.append(cell[:max_cell_length-1] + '…')
+            else:
+                cleaned_cells.append(cell)
+        
+        cleaned_lines.append('|'.join(f' {cell} ' for cell in cleaned_cells))
+    
+    if repaired:
+        logger.debug(f"Table auto-repaired: normalized cell counts to {num_columns} columns")
+    
+    return '\n'.join(cleaned_lines)
+
+
 def validate_table_rows(table_text: str, max_cell_length: int = 200) -> str:
     """
     Validate and clean table rows to prevent truncation.
@@ -50,9 +109,8 @@ def validate_table_rows(table_text: str, max_cell_length: int = 200) -> str:
     """
     stripped = table_text.strip()
     if len(stripped) < 2 or not validate_table(stripped):
-        lines_preview = stripped.split("\n")
-        logger.warning(f"Table validation failed: {len(lines_preview)} rows, first row: {lines_preview[0][:80]}")
-        return table_text
+        # Try to normalize the table instead of failing
+        return normalize_table(table_text, max_cell_length)
 
     lines = stripped.split("\n")
     if len(lines) < 2:
@@ -110,18 +168,18 @@ def clean_cutoff(text: str, max_chars: int = 10000) -> str:
             if i + 1 >= len(truncated) or truncated[i + 1] in ' \n\t':
                 # Found a complete sentence
                 result = truncated[:i + 1]
-                logger.warning(f"Text truncated from {len(text)} to {len(result)} chars at sentence boundary")
+                logger.info(f"Text truncated from {len(text)} to {len(result)} chars at sentence boundary")
                 return result
     
     # If no sentence boundary found, find last word boundary
     for i in range(max_chars - 1, -1, -1):
         if truncated[i] in ' \n\t':
             result = truncated[:i].rstrip()
-            logger.warning(f"Text truncated from {len(text)} to {len(result)} chars at word boundary")
+            logger.info(f"Text truncated from {len(text)} to {len(result)} chars at word boundary")
             return result
     
     # Worst case: hard truncate at max_chars
-    logger.warning(f"Text truncated from {len(text)} to {max_chars} chars (hard cutoff)")
+    logger.info(f"Text truncated from {len(text)} to {max_chars} chars (hard cutoff)")
     return truncated
 
 
@@ -768,7 +826,11 @@ Market saturation and increasing competition from established players.
     ]:
         section_text = report_results.get(section_key, '')
         if company.lower() not in section_text.lower():
-            logger.warning(f"Target company '{company}' not found in {section_label} output")
+            # Skip warning for product section (competitor-focused) and log at DEBUG level
+            if section_key == 'product':
+                logger.debug(f"Target company '{company}' not found in {section_label} output (expected for competitor-focused section)")
+            else:
+                logger.warning(f"Target company '{company}' not found in {section_label} output")
 
     # Data freshness signal for each section
     data_as_of = f"\n*Data collected: {now}. Points older than 180 days are flagged ⚠️.*\n"
