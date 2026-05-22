@@ -5,6 +5,7 @@ Strategic SWOT Analyst Agent
 
 from agno.agent import Agent
 from ..models import coordinator_model
+from ..shared_instructions import COMPLETION_RULE_INSTRUCTION
 
 
 def swot_synthesis_agent() -> Agent:
@@ -33,7 +34,7 @@ def swot_synthesis_agent() -> Agent:
             "- **Financial Data:** Only provide financial data if explicitly mentioned in the research. Otherwise, state 'Financial data not available from public sources'.",
             "",
             "COMPLETION RULES:",
-            "- **CRITICAL:** Always complete your last sentence. Never end with a hyphen, incomplete word, or cut-off phrase. If you hit a length limit, finish the current sentence and stop.",
+            COMPLETION_RULE_INSTRUCTION,
             "- Ensure all SWOT analysis is complete before finishing",
             "- You must complete your final sentence. Never end with a hyphen, an incomplete word, or a cut-off table cell. If you reach a length limit, finish the current sentence and stop.",
             "",
