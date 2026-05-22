@@ -8,6 +8,12 @@ from agno.agent import Agent
 from ..models import agent_model
 from ..tools import all_tools, google_maps_scraper_tool
 from ..config import GOOGLE_MAPS_SCRAPER_AVAILABLE
+from ..shared_instructions import (
+    COMPETITOR_ANALYSIS_INSTRUCTION,
+    COMPLETION_RULE_INSTRUCTION,
+    DOMAIN_ADAPTATION_INSTRUCTION,
+    VERIFICATION_INSTRUCTION,
+)
 
 
 def customer_feedback_agent() -> Agent:
@@ -24,7 +30,7 @@ def customer_feedback_agent() -> Agent:
         model=agent_model(max_tokens=8000),
         tools=tools,
         instructions=[
-            "CRITICAL: You MUST perform actual web searches and verify all feedback data. DO NOT invent or hallucinate customer reviews or ratings.",
+            VERIFICATION_INSTRUCTION,
             "Mine customer reviews, feedback, and sentiment from relevant platforms for ANY business type.",
             "",
             "GOOGLE MAPS SCRAPER INSTRUCTIONS:",
@@ -70,11 +76,11 @@ def customer_feedback_agent() -> Agent:
             "- Use tables and bullet points for clear presentation",
             "",
             "COMPLETION RULES:",
-            "- **CRITICAL:** Always complete your last sentence. Never end with a hyphen, incomplete word, or cut-off phrase. If you hit a length limit, finish the current sentence and stop.",
+            COMPLETION_RULE_INSTRUCTION,
             "- Ensure all customer feedback analysis is complete before finishing each competitor section",
-            "- Before analyzing, check {domain} parameter. Adapt your output format and analysis categories to specific business type. Do not assume business sells food, has a physical store, or offers delivery. Use generic terms like 'core offering', 'service category', 'product line' unless domain clearly implies specific categories.",
+            DOMAIN_ADAPTATION_INSTRUCTION,
             "- Perform comprehensive customer feedback analysis for {company} and competitors in {domain} in {location}. Adapt your analysis to the specific business type ({domain}).",
-            "- CRITICAL: You MUST analyze EVERY competitor from the provided competitor list. Loop through each competitor. Do not skip any. If a competitor has no data, mark 'No data available' and continue.",
+            COMPETITOR_ANALYSIS_INSTRUCTION,
             "",
             "UNIVERSAL BUSINESS FEEDBACK SOURCES:",
             "- **Products:** Product reviews, e-commerce ratings, customer testimonials",
