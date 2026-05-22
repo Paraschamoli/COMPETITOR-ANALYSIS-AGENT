@@ -512,6 +512,221 @@ def build_business_type_instructions(category: str) -> str:
     return instructions
 
 
+def generate_fallback_section(section_name: str, business_category: str, company: str, location: str, domain: str) -> str:
+    """
+    Generate fallback content for advanced sections when agent fails to generate them.
+    
+    Args:
+        section_name: Name of the section (e.g., 'customer_personas', 'financial')
+        business_category: Business category from business_type.py
+        company: Target company name
+        location: Location
+        domain: Business domain/type
+    
+    Returns:
+        String with fallback content for the section
+    """
+    terminology = get_terminology(business_category)
+    
+    if section_name == 'customer_personas':
+        return f"""### Customer Personas
+
+**Note:** Customer personas generated from general {domain} industry patterns due to limited specific feedback data.
+
+**Persona 1: The Regular Customer**
+- **Demographics:** Local resident, ages 25-45, working professional
+- **Behavior:** Visits 2-3 times per week, orders consistent items, loyal to brand
+- **Motivations:** Values quality {terminology['offering']}, convenience, and atmosphere
+- **Pain Points:** Long wait times, inconsistent quality, limited seating
+- **Quote:** Based on general {domain} customer patterns
+
+**Persona 2: The Occasional Visitor**
+- **Demographics:** Tourist or visitor to {location}, ages 20-50
+- **Behavior:** Visits occasionally, tries new items, price-sensitive
+- **Motivations:** Exploring local {domain} options, convenience, recommendations
+- **Pain Points:** High prices, confusing menu, poor service
+- **Quote:** Based on general {domain} customer patterns
+
+**Persona 3: The Value Seeker**
+- **Demographics:** Budget-conscious, ages 18-35, student or early-career
+- **Behavior:** Seeks deals and promotions, price-sensitive, visits for value
+- **Motivations:** Affordability, good value for money, promotions
+- **Pain Points:** High prices, hidden fees, poor value
+- **Quote:** Based on general {domain} customer patterns
+"""
+
+    elif section_name == 'risk':
+        return f"""### Risk Assessment
+
+**Note:** Risk assessment based on general {domain} industry patterns in {location}.
+
+| Threat | Probability | Impact (1-5) | Mitigation Strategy |
+|--------|-------------|-------------|---------------------|
+| Increased competition from new {domain} businesses | Medium | 4 | Differentiate through unique {terminology['core_offering']} and customer experience |
+| Rising costs (rent, labor, ingredients) | High | 3 | Optimize operations, adjust pricing strategically |
+| Changing customer preferences | Medium | 3 | Regularly update {terminology['product_line']} based on market trends |
+| Economic downturn affecting discretionary spending | Medium | 4 | Focus on value offerings and loyalty programs |
+| Negative online reviews or reputation issues | Low | 5 | Proactive customer service and review management
+"""
+
+    elif section_name == 'recommendations':
+        return f"""### Actionable Recommendations
+
+**Note:** Recommendations based on general {domain} industry best practices.
+
+| Recommendation | Owner | Timeline | Success Metric (KPI) | Priority |
+|----------------|-------|----------|----------------------|----------|
+| Enhance {terminology['core_offering']} differentiation | Product | Short | Increased customer satisfaction scores | High |
+| Implement customer loyalty program | Marketing | Short | Repeat customer rate increase | Medium |
+| Optimize pricing strategy | Operations | Medium | Improved profit margins | High |
+| Expand digital marketing presence | Marketing | Short | Increased online engagement | Medium |
+| Improve operational efficiency | Operations | Medium | Reduced costs per transaction | High |
+"""
+
+    elif section_name == 'financial':
+        return f"""### Financial Benchmarks
+
+**Note:** Financial benchmarks based on industry averages for {domain} businesses.
+
+**Estimated Financial Performance:**
+- **Average Spend per Visitor:** Industry average for {domain} businesses in {location}
+- **Estimated Monthly Foot Traffic:** Based on location size and {domain} industry patterns
+- **Average Revenue per Month:** Calculated from above estimates
+- **Peak vs. Off-Peak Revenue Ratio:** Based on general {domain} seasonal patterns
+- **Market Share Estimate:** Based on competitor count and local market size
+
+**Cost Structure (Industry Benchmarks):**
+- **{terminology['offering'].title()} Cost:** 25-35% of revenue (Industry average for {domain})
+- **Labor Cost:** 25-30% of revenue (Industry average for {domain})
+- **Rent/Overhead:** 15-25% of revenue (Industry average for {domain})
+- **Marketing:** 3-5% of revenue (Industry average for {domain})
+- **Profit Margin:** 5-15% (Industry average for {domain})
+"""
+
+    elif section_name == 'digital_ads':
+        return f"""### Digital Ads & Paid Media
+
+**Note:** Analysis based on general {domain} industry digital marketing practices.
+
+**Current Advertising Presence:**
+- **Google Ads:** Not visible in analysis (recommend implementation)
+- **Facebook/Instagram Ads:** Not visible in analysis (recommend implementation)
+- **Other Platforms:** Not visible in analysis
+
+**Recommended Ad Strategy:**
+- **Primary Platforms:** Google Ads (local search), Instagram (visual content), Facebook (community engagement)
+- **Target Audiences:** Local residents, professionals in area, tourists visiting {location}
+- **Budget Allocation:** 40% Google Ads, 40% Instagram/Facebook, 20% retargeting
+- **Key Messaging:** Highlight {terminology['core_offering']}, quality, local authenticity
+- **Seasonal Adjustments:** Increase spend during peak {domain} season, reduce during off-peak
+"""
+
+    elif section_name == 'ugc':
+        return f"""### UGC & Hashtag Analysis
+
+**Note:** Analysis based on general {domain} industry social media practices.
+
+**Top Performing Hashtags:**
+- #{domain.replace(' ', '')}: Industry standard hashtag
+- #{location.replace(' ', '')}: Local engagement
+- #{company.replace(' ', '')}: Brand-specific hashtag
+
+**UGC Campaign Recommendations:**
+- **Campaign Idea 1:** Photo contest featuring customers with {terminology['offering']}
+- **Campaign Idea 2:** Review sharing campaign with incentives
+- **Incentive Structure:** Discounts on next visit for featured content
+- **Content Guidelines:** Focus on authentic experiences, high-quality photos
+"""
+
+    elif section_name == 'accessibility':
+        return f"""### Accessibility & Inclusivity
+
+**Note:** Accessibility features require on-site verification.
+
+**Physical Accessibility:**
+- **Wheelchair Access:** Needs verification - check official sources
+- **Parking:** Needs verification - check official sources
+- **Entrance:** Needs verification - check official sources
+- **Restrooms:** Needs verification - check official sources
+
+**Digital Accessibility:**
+- **Website:** Needs verification for mobile-friendliness and accessibility features
+- **Online Ordering:** Needs verification for accessibility compliance
+
+**Inclusivity Features:**
+- **Dietary Options:** Recommend offering diverse {terminology['offering']} options
+- **Language Support:** Recommend multi-language menus if tourist area
+- **Family Facilities:** Recommend family-friendly amenities
+- **Quiet Hours:** Consider implementing for accessibility
+
+**Recommendations:**
+- Conduct accessibility audit of physical location
+- Ensure website meets WCAG accessibility standards
+- Train staff on inclusive practices
+"""
+
+    elif section_name == 'seasonal':
+        return f"""### Seasonal Trends
+
+**Note:** Seasonal patterns based on general {domain} industry trends.
+
+**Seasonal Traffic Patterns:**
+| Month | Traffic Level | Notes |
+|-------|---------------|-------|
+| January | Low | Post-holiday slowdown |
+| February | Low-Medium | Building toward spring |
+| March | Medium | Spring awakening |
+| April | Medium-High | Spring peak |
+| May | High | Pre-summer activity |
+| June | High | Summer season start |
+| July | High | Peak summer season |
+| August | High | Peak summer season |
+| September | Medium-High | Back-to-school/business |
+| October | Medium | Fall season |
+| November | Medium | Pre-holiday buildup |
+| December | High | Holiday season |
+
+**Seasonal Strategy:**
+- **Peak Season:** Maximize staffing, optimize inventory, focus on efficiency
+- **Off-Peak Season:** Promotions, special events, maintenance, staff training
+- **Transition Periods:** Marketing campaigns, seasonal {terminology['offering']} launches
+"""
+
+    elif section_name == 'action_plan':
+        return f"""### Next Steps / Action Plan
+
+**Note:** Action plan based on general {domain} industry best practices.
+
+**Immediate Actions (0-30 days):**
+1. Audit current {terminology['offering']} offerings and pricing - Operations - Complete inventory review
+2. Set up basic social media presence - Marketing - Create profiles on key platforms
+3. Train staff on customer service standards - Operations - Improve customer satisfaction
+
+**Short-Term Actions (1-3 months):**
+1. Implement customer feedback collection system - Marketing - Gather actionable insights
+2. Optimize {terminology['core_offering']} based on feedback - Product - Enhance differentiation
+3. Launch initial digital marketing campaign - Marketing - Increase visibility
+
+**Medium-Term Actions (3-6 months):**
+1. Develop loyalty program - Marketing - Increase repeat customers
+2. Expand {terminology['product_line']} based on demand - Product - Grow revenue streams
+3. Improve operational efficiency - Operations - Reduce costs
+
+**Long-Term Actions (6-12 months):**
+1. Consider expansion or additional locations - Strategy - Grow market presence
+2. Develop strategic partnerships - Strategy - Increase reach
+3. Implement advanced analytics - Operations - Data-driven decisions
+
+**Success Tracking:**
+- Monthly review of key metrics (revenue, customer satisfaction, repeat rate)
+- Quarterly strategy adjustment based on performance
+- Annual comprehensive review and planning
+"""
+
+    else:
+        return f"*Insufficient data - {section_name} section could not be generated from available research data.*"
+
+
 def main():
     args = parse_args()
     banner(args)
@@ -1118,6 +1333,15 @@ Key Local Research Findings:
     advanced_sections = {}
     if ENABLE_ADVANCED_SECTIONS:
         print("\nAdvanced: Strategic Analysis & Recommendations")
+        
+        # Log data availability for debugging
+        print(f"  [i] Data availability check:")
+        print(f"    - Discovery: {len(step_results.get('discovery', ''))} chars")
+        print(f"    - Product: {len(step_results.get('product', ''))} chars")
+        print(f"    - Pricing: {len(step_results.get('pricing', ''))} chars")
+        print(f"    - Feedback: {len(step_results.get('feedback', ''))} chars")
+        print(f"    - SWOT: {len(step_results.get('swot', ''))} chars")
+        
         # Use explicit dict with .format_map() to avoid KeyError on special characters
         advanced_context_kwargs = {
             'company': company,
@@ -1177,14 +1401,32 @@ Complete Research Summary:
         if advanced_result is None:
             advanced_result = ""
             print("  [!] Advanced Analysis failed -- using empty placeholder")
+        
+        # Log result length for debugging
+        print(f"  [i] Advanced result length: {len(advanced_result)} chars")
+        
         sections = {}
         current_section = None
         current_content = []
+        expected_sections = [
+            "1. Customer Personas",
+            "2. Risk Assessment",
+            "3. Actionable Recommendations",
+            "4. Financial Benchmarks",
+            "5. Digital Ads & Paid Media",
+            "6. UGC & Hashtag Analysis",
+            "7. Accessibility & Inclusivity",
+            "8. Seasonal Trends",
+            "9. Next Steps / Action Plan"
+        ]
+        found_sections = []
+        
         for line in advanced_result.split('\n'):
             if re.match(r'^#{2,5}\s', line):
                 if current_section:
                     canonical_key = map_advanced_header_to_canonical_key(current_section)
                     sections[canonical_key] = '\n'.join(current_content)
+                    found_sections.append(current_section)
                 current_section = re.sub(r'^#+\s*', '', line).strip()
                 current_content = []
             else:
@@ -1192,6 +1434,34 @@ Complete Research Summary:
         if current_section:
             canonical_key = map_advanced_header_to_canonical_key(current_section)
             sections[canonical_key] = '\n'.join(current_content)
+            found_sections.append(current_section)
+        
+        # Log which sections were found vs missing
+        missing_sections = [s for s in expected_sections if s not in found_sections]
+        if missing_sections:
+            print(f"  [!] Missing sections: {missing_sections}")
+            # Generate fallback content for missing sections
+            section_mapping = {
+                "1. Customer Personas": "customer_personas",
+                "2. Risk Assessment": "risk",
+                "3. Actionable Recommendations": "recommendations",
+                "4. Financial Benchmarks": "financial",
+                "5. Digital Ads & Paid Media": "digital_ads",
+                "6. UGC & Hashtag Analysis": "ugc",
+                "7. Accessibility & Inclusivity": "accessibility",
+                "8. Seasonal Trends": "seasonal",
+                "9. Next Steps / Action Plan": "action_plan"
+            }
+            for missing in missing_sections:
+                section_key = section_mapping.get(missing)
+                if section_key:
+                    fallback_content = generate_fallback_section(section_key, business_category, company, location, domain)
+                    canonical_key = map_advanced_header_to_canonical_key(missing)
+                    sections[canonical_key] = fallback_content
+                    print(f"  [i] Generated fallback for: {missing}")
+        if found_sections:
+            print(f"  [+] Found sections: {found_sections}")
+        
         advanced_sections = sections
         print(f"  Advanced section keys: {sorted(advanced_sections.keys())}")
         print(f"  Advanced sections parsed: {list(advanced_sections.keys())}")
