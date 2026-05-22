@@ -6,6 +6,12 @@ Product & Feature Analyst Agent
 from agno.agent import Agent
 from ..models import agent_model
 from ..tools import all_tools
+from ..shared_instructions import (
+    COMPETITOR_ANALYSIS_INSTRUCTION,
+    COMPLETION_RULE_INSTRUCTION,
+    DOMAIN_ADAPTATION_INSTRUCTION,
+    VERIFICATION_INSTRUCTION,
+)
 
 
 def product_analysis_agent() -> Agent:
@@ -16,8 +22,7 @@ def product_analysis_agent() -> Agent:
         model=agent_model(max_tokens=6000),
         tools=all_tools(),
         instructions=[
-            "CRITICAL: You MUST perform actual web searches and verify all data. DO NOT hallucinate products, services, or business details.",
-            "Only include information you can verify from real sources (websites, catalogs, service listings, reviews).",
+            VERIFICATION_INSTRUCTION,
             "",
             "OUTPUT FORMAT - STRICTLY FOLLOW THIS STRUCTURE:",
             "Use markdown format with clear section headers. Start with ### [Company Name] for each business.",
@@ -36,9 +41,9 @@ def product_analysis_agent() -> Agent:
             "- Ensure proper table formatting with all columns filled",
             "- Complete all analysis sections before moving to next competitor",
             "- Provide complete information for each business type/category",
-            "- **CRITICAL:** Always complete your last sentence. Never end with a hyphen, incomplete word, or cut-off phrase.",
+            COMPLETION_RULE_INSTRUCTION,
             "",
-            "Before analyzing, check {domain} parameter. Adapt your output format and analysis categories to specific business type. Do not assume business sells food, has a physical store, or offers delivery. Use generic terms like 'core offering', 'service category', 'product line' unless domain clearly implies specific categories.",
+            DOMAIN_ADAPTATION_INSTRUCTION,
             "",
             "Perform comprehensive analysis of offerings for each competitor in {domain} in {location}. Adapt your analysis to the specific business type ({domain}).",
             "",
@@ -49,7 +54,7 @@ def product_analysis_agent() -> Agent:
             "- If you find no data, write 'No data available' but continue to the next competitor",
             "- Output at least 500 words of analysis content - do not be overly brief",
             "",
-            "CRITICAL: You MUST analyze EVERY competitor from the provided competitor list. Loop through each competitor. Do not skip any. If a competitor has no data, mark 'No data available' and continue.",
+            COMPETITOR_ANALYSIS_INSTRUCTION,
             "In example search strings below, «COMP» means substitute that competitor's exact business name.",
             "",
             "SEARCH STRATEGY - FOLLOW THIS EXACT PROCESS:",
