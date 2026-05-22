@@ -7,6 +7,11 @@ Enhanced with complete table validation and no-empty-cell policy
 from agno.agent import Agent
 from ..models import agent_model
 from ..tools import all_tools
+from ..shared_instructions import (
+    COMPETITOR_ANALYSIS_INSTRUCTION,
+    COMPLETION_RULE_INSTRUCTION,
+    DOMAIN_ADAPTATION_INSTRUCTION,
+)
 
 
 def pricing_business_agent() -> Agent:
@@ -17,7 +22,7 @@ def pricing_business_agent() -> Agent:
         model=agent_model(max_tokens=8000),
         tools=all_tools(),
         instructions=[
-            "CRITICAL: You MUST perform actual web searches and verify all pricing data. DO NOT invent or hallucinate pricing information.",
+            VERIFICATION_INSTRUCTION,
             "Extract pricing information, business model, and competitive positioning for ANY business type.",
             "",
             "TABLE COMPLETION RULES:",
@@ -46,13 +51,13 @@ def pricing_business_agent() -> Agent:
             "- Ensure all competitor pricing analysis is complete",
             "- Complete all pricing categories before moving to next competitor",
             "- Provide complete business model analysis for each competitor",
-            "- **CRITICAL:** Always complete your last sentence. Never end with a hyphen, incomplete word, or cut-off phrase. If you hit a length limit, finish the current sentence and stop.",
+            COMPLETION_RULE_INSTRUCTION,
             "",
-            "Before analyzing, check {domain} parameter. Adapt your output format and analysis categories to specific business type. Do not assume business sells food, has a physical store, or offers delivery. Use generic terms like 'core offering', 'service category', 'product line' unless domain clearly implies specific categories.",
+            DOMAIN_ADAPTATION_INSTRUCTION,
             "",
             "Perform comprehensive pricing and business model analysis for {company} and competitors in {domain} in {location}. Adapt your analysis to the specific business type ({domain}).",
             "",
-            "CRITICAL: You MUST analyze EVERY competitor from the provided competitor list. Loop through each competitor. Do not skip any. If a competitor has no data, mark 'No data available' and continue.",
+            COMPETITOR_ANALYSIS_INSTRUCTION,
             "",
             "**UNIVERSAL BUSINESS PRICING:**",
             "- **Products:** Retail prices, wholesale costs, bulk discounts",
