@@ -11,6 +11,7 @@ import argparse
 import logging
 import re
 import time
+from typing import Optional
 from agent.config import (
     COORDINATOR_MODEL, AGENT_MODEL, CRAWL4AI_AVAILABLE,
     AGENT_REACH_AVAILABLE, YOUTUBE_AVAILABLE, ENABLE_ADVANCED_SECTIONS, GOOGLE_MAPS_SCRAPER_AVAILABLE
@@ -27,6 +28,7 @@ from agent.agents.swot_synthesis_agent import swot_synthesis_agent
 from agent.agents.advanced_sections_agent import advanced_sections_agent
 from agent.tools import get_youtube_channel_stats, scrape_google_maps
 from agent.report_generator import synthesize_final_report, save_report, clean_cutoff
+from agent.business_type import classify_business_type, get_search_template, get_section_inclusions, get_terminology
 
 try:
     from agent.tools import TavilyTools, SerperTools
@@ -390,17 +392,16 @@ def run_step(
     company: str,
     domain: str,
     location: str,
-    min_content_length: int = 100,  # Minimum chars to consider successful
-) -> str | None:
-    """Run a single agent step with error handling and retry logic.
-
-    Prompt is formatted with company/domain/location; agent instructions are
-    handled by agno as the system prompt — not injected into user content.
-    Returns None on final failure so callers can detect the failure state.
+    min_content_length: int = 100,
+    business_category: str = "general"
+) -> Optional[str]:
+    """
+    Run a single analysis step with retry logic.
 
     Args:
         min_content_length: Minimum characters required to consider the step successful.
                            If agent returns less, it will be retried.
+        business_category: Business type category for adaptation
     """
     MAX_RETRIES = 3
     RETRY_DELAY = 5  # seconds, doubled on each retry
@@ -420,7 +421,7 @@ def run_step(
 
             result = agent.run(
                 formatted_prompt,
-                session_state={"company": company, "domain": domain, "location": location},
+                session_state={"company": company, "domain": domain, "location": location, "business_category": business_category},
             )
             content = ""
             if hasattr(result, "content") and result.content is not None:
@@ -459,6 +460,58 @@ def run_step(
     return None
 
 
+def build_business_type_instructions(category: str) -> str:
+    """
+    Build business type-specific instructions for agents based on category.
+    
+    Args:
+        category: Business category string (food, retail, service, tech, etc.)
+    
+    Returns:
+        String with category-specific instructions
+    """
+    inclusions = get_section_inclusions(category)
+    terminology = get_terminology(category)
+    
+    instructions = f"\n\nBUSINESS TYPE ADAPTATION (Category: {category.upper()}):\n"
+    
+    # Add terminology substitutions
+    instructions += f"- Use '{terminology['offering']}' instead of 'menu items' or generic terms\n"
+    instructions += f"- Use '{terminology['core_offering']}' instead of 'signature dishes'\n"
+    instructions += f"- Use '{terminology['product_line']}' instead of 'food & beverage offerings'\n"
+    
+    # Add conditional section instructions
+    if not inclusions.get("delivery_analysis", False):
+        instructions += "- DO NOT analyze delivery fees, service charges, or delivery partners\n"
+    
+    if not inclusions.get("menu_pricing", False):
+        instructions += "- DO NOT analyze menu items or food-specific pricing (use generic offerings instead)\n"
+    
+    if not inclusions.get("seating_capacity", False):
+        instructions += "- DO NOT analyze seating capacity or table arrangements\n"
+    
+    if not inclusions.get("opening_hours", False):
+        instructions += "- DO NOT analyze physical opening hours (focus on support hours or availability instead)\n"
+    
+    if not inclusions.get("parking_accessibility", False):
+        instructions += "- DO NOT analyze parking or physical accessibility\n"
+    
+    if not inclusions.get("table_service", False):
+        instructions += "- DO NOT analyze table service vs counter service\n"
+    
+    if not inclusions.get("happy_hours", False):
+        instructions += "- DO NOT analyze happy hours or promotions\n"
+    
+    if not inclusions.get("delivery_partners", False):
+        instructions += "- DO NOT analyze delivery partners (UberEats, DoorDash, etc.)\n"
+    
+    # Add search template hint
+    search_template = get_search_template(category, "{company}", "{location}")
+    instructions += f"- Recommended search pattern: '{search_template}'\n"
+    
+    return instructions
+
+
 def main():
     args = parse_args()
     banner(args)
@@ -468,7 +521,11 @@ def main():
     location = args.location
     competitors_seed = args.initial_competitors
     
-    context = f"Business: {company} | Type: {domain} | Location: {location} | Known competitors: {competitors_seed}"
+    # Classify business type
+    business_category = classify_business_type(domain)
+    print(f"  [i] Detected business type: {business_category}")
+    
+    context = f"Business: {company} | Type: {domain} | Location: {location} | Known competitors: {competitors_seed} | Category: {business_category}"
     target_analysis_instruction = (
         f"\n\nANALYSIS ORDER — MANDATORY:\n"
         f"1. First, fully analyze the TARGET business: {company}\n"
@@ -533,6 +590,7 @@ def main():
         company=company,
         domain=domain,
         location=location,
+        business_category=business_category,
     )
     if _result is None:
         step_results["discovery"] = ""
@@ -731,11 +789,13 @@ def main():
 
     for batch_num, batch in enumerate(competitor_batches, 1):
         batch_list_str = "\n".join(f"- {name}" for name in batch)
+        business_type_instructions = build_business_type_instructions(business_category)
         batch_instruction = (
             f"\n\nBATCH {batch_num}/{len(competitor_batches)} - Analyze these businesses:\n"
             f"{batch_list_str}\n\n"
-            f"Focus on: menu items, specialties, unique offerings, ambiance, customer experience.\n"
+            f"Focus on: offerings, specialties, unique features, ambiance, customer experience.\n"
             f"Use ### headers for each business. Produce at least 200 words of analysis content."
+            f"{business_type_instructions}"
         )
 
         _result = run_step(
@@ -745,6 +805,7 @@ def main():
             company=company,
             domain=domain,
             location=location,
+            business_category=business_category,
         )
         if _result and len(_result.strip()) >= 100:
             all_product_results.append(_result)
@@ -764,6 +825,7 @@ Analyze core offerings, specialties, and competitive positioning. Use markdown f
                 company=company,
                 domain=domain,
                 location=location,
+                business_category=business_category,
             )
             if _fallback and len(_fallback.strip()) >= 100:
                 all_product_results.append(_fallback)
@@ -776,17 +838,20 @@ Analyze core offerings, specialties, and competitive positioning. Use markdown f
         step_results["product"] = ""
         print("  [!] Product Analysis failed - using empty placeholder")
 
-    # ── Step 3: Pricing & Business Model ──────────────────────────────────────
+    # ── Step 3: Pricing & Business Model Analysis ───────────────────────────────
     print("\nStep 3/7: Pricing & Business Model Analysis")
+    business_type_instructions = build_business_type_instructions(business_category)
     _result = run_step(
         "Pricing Analysis",
         pricing_business_agent(),
         f"{context}{target_analysis_instruction}{canonical_data_injection}{competitor_prompt_addition}\n\n"
-        f"Analyze pricing and business model for {company} and all discovered local competitors in {location}.",
+        f"Analyze pricing and business model for {company} and all discovered local competitors in {location}."
+        f"{business_type_instructions}",
         company=company,
         domain=domain,
         location=location,
         min_content_length=500,
+        business_category=business_category,
     )
     if _result is None:
         step_results["pricing"] = ""
@@ -847,6 +912,7 @@ Analyze core offerings, specialties, and competitive positioning. Use markdown f
         company=company,
         domain=domain,
         location=location,
+        business_category=business_category,
     )
     if _result is None:
         step_results["seo"] = ""
@@ -887,6 +953,7 @@ Analyze core offerings, specialties, and competitive positioning. Use markdown f
         domain=domain,
         location=location,
         min_content_length=500,  # Require at least 500 chars - retry if too short
+        business_category=business_category,
     )
     if _result is None:
         step_results["social"] = ""
@@ -905,6 +972,7 @@ Analyze core offerings, specialties, and competitive positioning. Use markdown f
         company=company,
         domain=domain,
         location=location,
+        business_category=business_category,
     )
     if _result is None:
         step_results["news"] = ""
@@ -916,15 +984,18 @@ Analyze core offerings, specialties, and competitive positioning. Use markdown f
     print("\nStep 7/7: Customer Feedback Analysis")
     
     # (Review data already loaded from discovery scraper; no need for second scraper pass)
+    business_type_instructions = build_business_type_instructions(business_category)
     _result = run_step(
         "Customer Feedback",
         customer_feedback_agent(),
         f"{context}{target_analysis_instruction}{canonical_data_injection}{competitor_prompt_addition}\n\n"
-        f"Mine customer reviews from Google, Yelp, TripAdvisor for {company} and all local competitors in {location}.",
+        f"Mine customer reviews from Google, Yelp, TripAdvisor for {company} and all local competitors in {location}."
+        f"{business_type_instructions}",
         company=company,
         domain=domain,
         location=location,
         min_content_length=500,
+        business_category=business_category,
     )
     if _result is None:
         step_results["feedback"] = ""
@@ -1038,6 +1109,7 @@ Key Local Research Findings:
             domain=domain,
             location=location,
             min_content_length=300,
+            business_category=business_category,
         )
         if step_results["swot"] is None:
             step_results["swot"] = ""
@@ -1100,6 +1172,7 @@ Complete Research Summary:
             domain=domain,
             location=location,
             min_content_length=300,
+            business_category=business_category,
         )
         if advanced_result is None:
             advanced_result = ""
