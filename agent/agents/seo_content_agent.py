@@ -6,6 +6,11 @@ SEO & Content Strategy Analyst Agent
 from agno.agent import Agent
 from ..models import agent_model
 from ..tools import all_tools
+from ..shared_instructions import (
+    COMPETITOR_ANALYSIS_INSTRUCTION,
+    COMPLETION_RULE_INSTRUCTION,
+    DOMAIN_ADAPTATION_INSTRUCTION,
+)
 
 
 def seo_content_agent() -> Agent:
@@ -23,11 +28,11 @@ def seo_content_agent() -> Agent:
             "  Search '{company} reviews Google {location}' → get own review count and rating",
             "  Present this as '### {company} — Self-Audit' section FIRST in your output",
             "",
-            "Before analyzing, check {domain} parameter. Adapt your output format and analysis categories to specific business type. Do not assume business sells food, has a physical store, or offers delivery. Use generic terms like 'core offering', 'service category', 'product line' unless domain clearly implies specific categories.",
+            DOMAIN_ADAPTATION_INSTRUCTION,
             "",
             "Perform comprehensive local SEO and content analysis for {company} and competitors in {domain} in {location}. Adapt your analysis to the specific business type ({domain}).",
             "",
-            "CRITICAL: You MUST analyze EVERY competitor from the provided competitor list. Loop through each competitor. Do not skip any. If a competitor has no data, mark 'No data available' and continue.",
+            COMPETITOR_ANALYSIS_INSTRUCTION,
             "In example search strings, «COMP» means substitute that competitor's exact business name.",
             "",
             "RESEARCH PROCESS FOR LOCAL BUSINESSES:",
@@ -47,7 +52,7 @@ def seo_content_agent() -> Agent:
             "  - Social media engagement and local community presence",
             "",
             "COMPLETION RULES:",
-            "- **CRITICAL:** Always complete your last sentence. Never end with a hyphen, incomplete word, or cut-off phrase. If you hit a length limit, finish the current sentence and stop.",
+            COMPLETION_RULE_INSTRUCTION,
             "- Ensure all analysis is complete before finishing each competitor section",
             "- You must complete your final sentence. Never end with a hyphen, an incomplete word, or a cut-off table cell. If you reach a length limit, finish the current sentence and stop.",
             "",
