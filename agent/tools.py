@@ -283,8 +283,30 @@ def scrape_google_maps(query: str, location: str, depth: int = 1, extract_emails
     if not GOOGLE_MAPS_SCRAPER_AVAILABLE:
         return {"error": "Google Maps Scraper not available."}
 
+    # Clean up any existing containers from previous scraper runs
+    try:
+        result = subprocess.run(
+            ["docker", "ps", "-q", "--filter", "ancestor=gosom/google-maps-scraper"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.stdout.strip():
+            for container_id in result.stdout.strip().split('\n'):
+                try:
+                    subprocess.run(
+                        ["docker", "kill", container_id],
+                        capture_output=True,
+                        timeout=5
+                    )
+                except:
+                    pass
+    except:
+        pass
+
     for attempt in range(max_retries + 1):
         temp_dir = None
+        container_name = f"gms-scraper-{int(time.time())}-{attempt}"
         try:
             # Create a temporary directory that will be mounted into the container
             import tempfile
@@ -296,7 +318,8 @@ def scrape_google_maps(query: str, location: str, depth: int = 1, extract_emails
             
             # Container will see the file at /input/input.txt
             cmd = [
-                "docker", "run", "--rm", "-i",
+                "docker", "run", "--rm",
+                "--name", container_name,
                 "-v", f"{temp_dir}:/input",   # mount the temp dir
                 "gosom/google-maps-scraper",
                 "-depth", str(depth),
@@ -309,50 +332,75 @@ def scrape_google_maps(query: str, location: str, depth: int = 1, extract_emails
             if extra_reviews:
                 cmd.append("--extra-reviews")
             
-            timeout_duration = 180 if attempt == 0 else 120
+            # No timeout - let container run until it completes
+            # The scraper will exit when done, and --rm will clean up the container
             
-            result = subprocess.run(
+            # Use Popen for better control over process cleanup
+            process = subprocess.Popen(
                 cmd,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=timeout_duration,
                 encoding='utf-8',
                 errors='replace'
             )
             
+            try:
+                stdout, stderr = process.communicate()
+            except Exception as e:
+                # Kill the process and the Docker container on error
+                process.kill()
+                process.wait()
+                # Force kill the Docker container by name
+                try:
+                    subprocess.run(
+                        ["docker", "kill", container_name],
+                        capture_output=True,
+                        timeout=5
+                    )
+                except:
+                    pass
+                # Clean up temp directory
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                if attempt < max_retries:
+                    print(f"  [!] Scraper error: {e} (attempt {attempt+1}/{max_retries+1}), retrying in 10s...")
+                    time.sleep(10)
+                    continue
+                return {"error": f"Scraper error: {str(e)}"}
+            
             # Clean up temp directory
             shutil.rmtree(temp_dir, ignore_errors=True)
             
-            if result.returncode != 0:
+            if process.returncode != 0:
                 if attempt < max_retries:
                     print(f"  [!] Scraper failed (attempt {attempt+1}/{max_retries+1}), retrying...")
                     time.sleep(5)
                     continue
-                return {"error": f"Docker command failed: {result.stderr}"}
+                return {"error": f"Docker command failed: {stderr}"}
             
             # Parse output (same as before)
-            if result.stdout.strip():
+            if stdout.strip():
                 try:
-                    data = json.loads(result.stdout)
+                    data = json.loads(stdout)
                     return {"success": True, "data": data}
                 except json.JSONDecodeError:
-                    lines = result.stdout.strip().split('\n')
+                    lines = stdout.strip().split('\n')
                     data = [json.loads(line) for line in lines if line.strip()]
                     return {"success": True, "data": data}
             else:
                 return {"error": "No output from Google Maps Scraper"}
-                
-        except subprocess.TimeoutExpired:
-            if temp_dir:
-                shutil.rmtree(temp_dir, ignore_errors=True)
-            if attempt < max_retries:
-                print(f"  [!] Scraper timed out (attempt {attempt+1}/{max_retries+1}), retrying in 10s...")
-                time.sleep(10)
-                continue
-            return {"error": f"Scraper timed out after {timeout_duration}s"}
         except Exception as e:
             if temp_dir:
                 shutil.rmtree(temp_dir, ignore_errors=True)
+            # Try to kill container on any error
+            try:
+                subprocess.run(
+                    ["docker", "kill", container_name],
+                    capture_output=True,
+                    timeout=5
+                )
+            except:
+                pass
             if attempt < max_retries:
                 print(f"  [!] Scraper error: {e}, retrying...")
                 time.sleep(5)
