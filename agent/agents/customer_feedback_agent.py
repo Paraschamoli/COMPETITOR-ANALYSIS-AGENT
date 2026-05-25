@@ -6,40 +6,32 @@ Enhanced with sentiment trends, theme clustering, and verified quotes only
 
 from agno.agent import Agent
 from ..models import agent_model
-from ..tools import all_tools, google_maps_scraper_tool
-from ..config import GOOGLE_MAPS_SCRAPER_AVAILABLE
-from ..shared_instructions import (
-    COMPETITOR_ANALYSIS_INSTRUCTION,
-    COMPLETION_RULE_INSTRUCTION,
-    DOMAIN_ADAPTATION_INSTRUCTION,
-    VERIFICATION_INSTRUCTION,
-)
+from ..tools import all_tools
 
 
 def customer_feedback_agent() -> Agent:
     """Create and return the Customer Intelligence Analyst agent"""
     tools = all_tools()
     
-    # Add Google Maps scraper if available for review data
-    if GOOGLE_MAPS_SCRAPER_AVAILABLE:
-        tools.append(google_maps_scraper_tool())
+    # NOTE: Google Maps scraper removed to prevent re-scraping in Step 7
+    # Review data is already cached from discovery step and passed in context
     
     return Agent(
         name="Customer Intelligence Analyst",
-        role="Mine customer reviews with sentiment trends, theme clustering, and verified quotes only using Google Maps Scraper when available.",
+        role="Mine customer reviews with sentiment trends, theme clustering, and verified quotes using cached discovery data.",
         model=agent_model(max_tokens=8000),
         tools=tools,
         instructions=[
-            VERIFICATION_INSTRUCTION,
-            "Mine customer reviews, feedback, and sentiment from relevant platforms for ANY business type.",
+            "CRITICAL: You MUST use the cached review data provided in the context. DO NOT re-scrape or search for new review data.",
+            "Mine customer reviews, feedback, and sentiment from the cached discovery data for ANY business type.",
             "",
-            "GOOGLE MAPS SCRAPER INSTRUCTIONS:",
-            "- **PRIMARY TOOL:** Use the 'scrape' tool with query set to each competitor's exact business name (from the competitor list) and location='{location}' to get Google Maps review data",
-            "- The scraper provides: exact review counts, ratings, and can extract up to ~300 reviews with --extra-reviews flag",
-            "- Use scraper data as the single source of truth for review counts and ratings",
-            "- **CRITICAL FALLBACK:** If scraper fails, returns error, or times out, IMMEDIATELY use search tools with that competitor's name plus 'Google Maps rating review count'",
-            "- Extract rating and review count from search snippet using regex patterns like 'X.X/5 (N reviews)' or 'X.X stars N reviews'",
-            "- The scraper returns JSON with review data - extract and format into your analysis",
+            "CACHED REVIEW DATA INSTRUCTIONS:",
+            "- **PRIMARY SOURCE:** Use the 'CANONICAL DATA' and cached Google Maps review data provided in the context",
+            "- The cached data includes: exact review counts, ratings from discovery step",
+            "- Use cached data as the single source of truth for review counts and ratings",
+            "- **DO NOT** use the 'scrape' tool - review data is already cached from discovery",
+            "- **DO NOT** search for new review data - use the cached data provided",
+            "- The cached data includes JSON with review data - extract and format into your analysis",
             "",
             "VERIFICATION RULES:",
             "- **Verified Quotes Only:** Only include customer quotes that you can verify appear on a real review platform (Google, Yelp, TripAdvisor, Facebook).",
@@ -76,11 +68,11 @@ def customer_feedback_agent() -> Agent:
             "- Use tables and bullet points for clear presentation",
             "",
             "COMPLETION RULES:",
-            COMPLETION_RULE_INSTRUCTION,
+            "- **CRITICAL:** Always complete your last sentence. Never end with a hyphen, incomplete word, or cut-off phrase. If you hit a length limit, finish the current sentence and stop.",
             "- Ensure all customer feedback analysis is complete before finishing each competitor section",
-            DOMAIN_ADAPTATION_INSTRUCTION,
+            "- Before analyzing, check {domain} parameter. Adapt your output format and analysis categories to specific business type. Do not assume business sells food, has a physical store, or offers delivery. Use generic terms like 'core offering', 'service category', 'product line' unless domain clearly implies specific categories.",
             "- Perform comprehensive customer feedback analysis for {company} and competitors in {domain} in {location}. Adapt your analysis to the specific business type ({domain}).",
-            COMPETITOR_ANALYSIS_INSTRUCTION,
+            "- CRITICAL: You MUST analyze EVERY competitor from the provided competitor list. Loop through each competitor. Do not skip any. If a competitor has no data, mark 'No data available' and continue.",
             "",
             "UNIVERSAL BUSINESS FEEDBACK SOURCES:",
             "- **Products:** Product reviews, e-commerce ratings, customer testimonials",
