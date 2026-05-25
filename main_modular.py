@@ -759,12 +759,18 @@ def main():
         "google_reviews": {},
         "per_competitor_prices": {},
     }
+    
+    # Global cache for discovery scraper results
+    discovery_scraper_cache = {
+        "scraped_competitors": [],
+        "google_reviews": {}
+    }
 
     # ── Google Maps Scraper Integration ────────────────────────────────────────
     scraped_competitors = []
     if GOOGLE_MAPS_SCRAPER_AVAILABLE:
         print("  [?] Attempting Google Maps Scraper for competitor discovery...")
-        scraper_result = scrape_google_maps(domain, location, depth=2)
+        scraper_result = scrape_google_maps(domain, location, depth=1)
         if scraper_result.get("success"):
             scraped_competitors = _parse_scraper_results(scraper_result)
             # Populate google_reviews directly from scraped competitors (discovery already gives rating+count)
@@ -776,8 +782,12 @@ def main():
                         "count": comp.get("review_count"),
                         "source": "google_maps_scraper"
                     }
+            # Store in global cache for reuse in subsequent steps
+            discovery_scraper_cache["scraped_competitors"] = scraped_competitors
+            discovery_scraper_cache["google_reviews"] = shared_data["google_reviews"].copy()
             print(f"  [✓] Loaded review data for {len(shared_data['google_reviews'])} competitors from Google Maps Scraper")
             print(f"  [✓] Google Maps Scraper found {len(scraped_competitors)} competitors")
+            print(f"  [✓] Cached scraper data for reuse in subsequent steps")
             for comp in scraped_competitors[:5]:  # Show first 5
                 print(f"     - {comp['name']} (Rating: {comp['rating']}, Reviews: {comp['review_count']})")
         else:
@@ -789,10 +799,11 @@ def main():
     # Add scraped competitors to context for the agent
     scraper_context = ""
     if scraped_competitors:
-        scraper_context = "\n\nPRE-DISCOVERED COMPETITORS FROM GOOGLE MAPS SCRAPER:\n"
+        scraper_context = "\n\nCACHED GOOGLE MAPS DISCOVERY DATA (from initial scraper call):\n"
         for comp in scraped_competitors:
             scraper_context += f"- {comp['name']}: Address={comp['address']}, Rating={comp['rating']}, Reviews={comp['review_count']}\n"
-        scraper_context += "\nUse this scraped data as the primary source. Verify and expand upon it with additional searches if needed."
+        scraper_context += "\nCRITICAL: Use this cached data as the PRIMARY source. DO NOT re-scrape or search for new discovery data."
+        scraper_context += "\nThe scraper has already run and this data is cached. Use it directly."
 
     # ── Step 1: Competitor Discovery ──────────────────────────────────────────
     print("\nStep 1/7: Local Competitor Discovery")
@@ -801,7 +812,7 @@ def main():
         competitor_discovery_agent(),
         f"{context}{scraper_context}\n\nThe target business is {company}. Include it in the comparison matrix as the baseline row with label '[TARGET]' before listing competitors."
         f"\n\nDiscover and profile all local competitors for {company} in the {domain} category in {location}."
-        f" Start with these known competitors: {competitors_seed}, then find more local businesses.",
+        f" Use the cached discovery data provided above. Start with these known competitors: {competitors_seed}, then find more local businesses if needed.",
         company=company,
         domain=domain,
         location=location,
@@ -870,6 +881,24 @@ def main():
                     logger.warning(f"Skipping invalid competitor row: {e}")
 
     shared_data['competitor_list'] = competitors
+
+    # ── Limit competitors to top 4 (by review count then rating) ─────────────────────
+    if len(competitors) > 4:
+        # Sort competitors by review count (descending) then by rating (descending)
+        # Prioritize competitors with more reviews for meaningful analysis
+        competitors_sorted = sorted(
+            competitors,
+            key=lambda x: (x.get('review_count', 0) or 0, x.get('rating', 0) or 0),
+            reverse=True
+        )
+        # Take top 4
+        competitors = competitors_sorted[:4]
+        shared_data['competitor_list'] = competitors
+        print(f"  [i] Limited to top 4 competitors by review count (then rating)")
+        for comp in competitors:
+            print(f"     - {comp.get('name')} (Rating: {comp.get('rating')}, Reviews: {comp.get('review_count')})")
+    else:
+        print(f"  [i] Using all {len(competitors)} competitors (≤ 4)")
 
     # ── Canonical review data from discovery ───────────────────────────────────
     # Populate canonical_reviews with verified discovery data before downstream agents run
@@ -1122,7 +1151,7 @@ Analyze core offerings, specialties, and competitive positioning. Use markdown f
     _result = run_step(
         "Local SEO Analysis",
         seo_content_agent(),
-        f"{context}{target_analysis_instruction}{competitor_prompt_addition}\n\n"
+        f"{context}{target_analysis_instruction}{canonical_data_injection}{competitor_prompt_addition}\n\n"
         f"Analyze local SEO presence and content strategy for {company} and all competitors in {location}.",
         company=company,
         domain=domain,
@@ -1198,12 +1227,21 @@ Analyze core offerings, specialties, and competitive positioning. Use markdown f
     # ── Step 7: Customer Feedback ─────────────────────────────────────────────
     print("\nStep 7/7: Customer Feedback Analysis")
     
+    # Build cached review data context
+    cached_review_context = ""
+    if discovery_scraper_cache.get("google_reviews"):
+        cached_review_context = "\n\nCACHED GOOGLE MAPS REVIEW DATA (from discovery step):\n"
+        for name, data in discovery_scraper_cache["google_reviews"].items():
+            cached_review_context += f"- {name}: Rating {data.get('rating')}, Reviews {data.get('count')}\n"
+        cached_review_context += "\nUse this cached data as the primary source. DO NOT re-scrape.\n"
+    
     # (Review data already loaded from discovery scraper; no need for second scraper pass)
     business_type_instructions = build_business_type_instructions(business_category)
     _result = run_step(
         "Customer Feedback",
         customer_feedback_agent(),
         f"{context}{target_analysis_instruction}{canonical_data_injection}{competitor_prompt_addition}\n\n"
+        f"{cached_review_context}\n\n"
         f"Mine customer reviews from Google, Yelp, TripAdvisor for {company} and all local competitors in {location}."
         f"{business_type_instructions}",
         company=company,
@@ -1405,6 +1443,9 @@ Complete Research Summary:
         # Log result length for debugging
         print(f"  [i] Advanced result length: {len(advanced_result)} chars")
         
+        # Log first 500 chars of advanced result for debugging
+        print(f"  [i] Advanced result preview: {advanced_result[:500]}")
+        
         sections = {}
         current_section = None
         current_content = []
@@ -1422,7 +1463,7 @@ Complete Research Summary:
         found_sections = []
         
         for line in advanced_result.split('\n'):
-            if re.match(r'^#{2,5}\s', line):
+            if re.match(r'^#{1,6}\s', line):
                 if current_section:
                     canonical_key = map_advanced_header_to_canonical_key(current_section)
                     sections[canonical_key] = '\n'.join(current_content)
@@ -1435,6 +1476,10 @@ Complete Research Summary:
             canonical_key = map_advanced_header_to_canonical_key(current_section)
             sections[canonical_key] = '\n'.join(current_content)
             found_sections.append(current_section)
+        
+        # Log actual headers found for debugging
+        if found_sections:
+            print(f"  [i] Actual headers found: {found_sections}")
         
         # Log which sections were found vs missing
         missing_sections = [s for s in expected_sections if s not in found_sections]
@@ -1455,10 +1500,12 @@ Complete Research Summary:
             for missing in missing_sections:
                 section_key = section_mapping.get(missing)
                 if section_key:
-                    fallback_content = generate_fallback_section(section_key, business_category, company, location, domain)
                     canonical_key = map_advanced_header_to_canonical_key(missing)
-                    sections[canonical_key] = fallback_content
-                    print(f"  [i] Generated fallback for: {missing}")
+                    # Only generate fallback if not already in sections (prevent duplicates)
+                    if canonical_key not in sections:
+                        fallback_content = generate_fallback_section(section_key, business_category, company, location, domain)
+                        sections[canonical_key] = fallback_content
+                        print(f"  [i] Generated fallback for: {missing}")
         if found_sections:
             print(f"  [+] Found sections: {found_sections}")
         

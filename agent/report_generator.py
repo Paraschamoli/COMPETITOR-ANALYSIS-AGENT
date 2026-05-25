@@ -799,6 +799,19 @@ Market saturation and increasing competition from established players.
     # Sections 4–9: 50-char threshold
     def _section_content(key: str, label: str) -> str:
         raw = report_results.get(key, '')
+        # Check if raw is a RunOutput object FIRST before any string conversion
+        if hasattr(raw, "__class__") and "RunOutput" in raw.__class__.__name__:
+            # Extract content from RunOutput object if present
+            if hasattr(raw, "content") and raw.content is not None:
+                raw = raw.content
+            else:
+                # RunOutput has content=None or no content attribute, indicating step failed
+                return f"*{label} data not available — step may have failed or returned no results.*"
+        elif not isinstance(raw, str):
+            raw = str(raw)
+        # Additional check for string representation of RunOutput
+        if isinstance(raw, str) and raw.startswith("RunOutput("):
+            return f"*{label} data not available — step may have failed or returned no results.*"
         out = add_verification_column_to_tables(clean_markdown(raw))
         if len(out.strip()) < 50:
             return f"*{label} data not available — step may have failed or returned no results.*"
