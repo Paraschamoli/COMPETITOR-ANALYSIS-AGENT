@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 
 # Model configuration
 # Updated Configuration for better/cheaper performance
-COORDINATOR_MODEL ="x-ai/grok-4.3"   #"moonshotai/kimi-k2.6"  # Higher reasoning, 75% cheaper
-AGENT_MODEL = "openai/gpt-oss-120b:nitro"     # Faster extraction, 80% cheaper
+COORDINATOR_MODEL ="openrouter/owl-alpha"   #"moonshotai/kimi-k2.6"  # Higher reasoning, 75% cheaper
+AGENT_MODEL = "openrouter/owl-alpha"     # Faster extraction, 80% cheaper
 
 # Or for context-heavy needs:
 # COORDINATOR_MODEL = "google/gemini-3.1-pro"
